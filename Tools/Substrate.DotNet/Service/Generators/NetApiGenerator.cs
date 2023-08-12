@@ -3,6 +3,7 @@ using Substrate.DotNet.Service.Node;
 using Substrate.NetApi.Model.Meta;
 using Serilog;
 using System.Collections.Generic;
+using Substrate.DotNet.Client.Versions;
 
 namespace Substrate.DotNet.Service.Generators
 {
@@ -18,14 +19,14 @@ namespace Substrate.DotNet.Service.Generators
          _projectSettings = projectSettings;
       }
 
-      protected override void GenerateClasses(MetaData metadata)
+      protected override void GenerateClasses(MetaData metadata, BlockVersion? blockVersion = null)
       {
          // dirty workaround for generics.
          // TODO (svnscha) Why dirty workaround?
          GetGenericStructs(metadata.NodeMetadata.Types);
 
          // generate types
-         NodeTypeResolver typeDict = GenerateTypes(metadata.NodeMetadata.Types, _projectSettings.ProjectDirectory, write: true);
+         NodeTypeResolver typeDict = GenerateTypes(metadata.NodeMetadata.Types, _projectSettings.ProjectDirectory, write: true, blockVersion: blockVersion);
 
          // generate modules
          GenerateModules(ProjectName, metadata.NodeMetadata.Modules, typeDict, metadata.NodeMetadata.Types, _projectSettings.ProjectDirectory);

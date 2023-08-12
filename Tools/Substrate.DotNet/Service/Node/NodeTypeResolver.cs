@@ -1,6 +1,7 @@
 ﻿#nullable enable
 
 using Serilog;
+using Substrate.DotNet.Client.Versions;
 using Substrate.DotNet.Extensions;
 using Substrate.NetApi.Model.Meta;
 using Substrate.NetApi.Model.Types.Metadata.V14;
@@ -139,11 +140,13 @@ namespace Substrate.DotNet.Service.Node
 
       public Dictionary<uint, NodeTypeResolved> TypeNames { get; private set; }
       public string NetApiProjectName { get; private set; }
+      public string ProjectSpecVersion { get; private set; }
 
-      public NodeTypeResolver(string nodeRuntime, string netApiProjectName, Dictionary<uint, NodeType> types)
+      public NodeTypeResolver(string nodeRuntime, string netApiProjectName, Dictionary<uint, NodeType> types, BlockVersion? blockVersion)
       {
          NodeRuntime = nodeRuntime;
          NetApiProjectName = netApiProjectName;
+         ProjectSpecVersion = (blockVersion is not null) ? $"v{blockVersion.SpecVersion.ToString()}" : string.Empty;
          TypeNames = Resolve(types);
       }
 
@@ -196,7 +199,7 @@ namespace Substrate.DotNet.Service.Node
                {
                   var nodeTypeComposite = (NodeTypeComposite)nodeType;
                   EnsurePathIsNotNull(nodeTypeComposite.Path);
-                  return NodeTypeName.Generated(this, ResolvePath(nodeTypeComposite.Path, string.Empty));
+                  return NodeTypeName.Generated(this, $"{ProjectSpecVersion}.{ResolvePath(nodeTypeComposite.Path, string.Empty)}");
                }
             case TypeDefEnum.Variant:
                {
@@ -273,7 +276,7 @@ namespace Substrate.DotNet.Service.Node
                break;
          }
 
-         return NodeTypeName.Generated(this, ResolvePath(nodeTypeVariant.Path, variantType));
+         return NodeTypeName.Generated(this, $"{ProjectSpecVersion}.{ResolvePath(nodeTypeVariant.Path, variantType)}");
       }
 
       public static string GetVariantType(string path)

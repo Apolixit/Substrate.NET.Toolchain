@@ -1,4 +1,5 @@
-﻿using Substrate.DotNet.Extensions;
+﻿using Substrate.DotNet.Client.Versions;
+using Substrate.DotNet.Extensions;
 using Substrate.NetApi.Model.Meta;
 using System.Collections.Generic;
 
@@ -11,6 +12,7 @@ namespace Substrate.DotNet.Service.Node.Base
       public PalletModule Module { get; private set; }
 
       public string PrefixName { get; private set; }
+      public string ProjectSpecVersion { get; private set; }
 
       protected ModuleBuilderBase(string projectName, uint id, PalletModule module, NodeTypeResolver typeDict,
           Dictionary<uint, NodeType> nodeTypes)
@@ -19,7 +21,11 @@ namespace Substrate.DotNet.Service.Node.Base
          NodeTypes = nodeTypes;
          Module = module;
          PrefixName = module.Name == "System" ? "Frame" : "Pallet";
-         NamespaceName = $"{ProjectName}.Generated.Model.{PrefixName + module.Name.MakeMethod()}";
+
+         ProjectSpecVersion = typeDict.ProjectSpecVersion;
+
+         string suffixVersion = string.IsNullOrEmpty(ProjectSpecVersion) ? string.Empty : $"{ProjectSpecVersion}.";
+         NamespaceName = $"{ProjectName}.Generated.Model.{suffixVersion}{PrefixName + module.Name.MakeMethod()}";
       }
    }
 }

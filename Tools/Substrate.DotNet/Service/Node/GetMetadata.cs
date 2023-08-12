@@ -4,9 +4,13 @@ using Serilog;
 using Substrate.NetApi;
 using Substrate.NetApi.Model.Extrinsics;
 using Substrate.NetApi.Model.Meta;
+using Substrate.NetApi.Model.Rpc;
+using Substrate.NetApi.Model.Types.Base;
 using Substrate.NetApi.Model.Types.Metadata;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -29,6 +33,24 @@ namespace Substrate.DotNet.Service.Node
 
          return null;
       }
+
+      //internal static List<MetaData> GetMetadatasFromFiles(ILogger logger, List<string> serviceArguments)
+      //{
+      //   var res = new List<MetaData>();
+      //   if(serviceArguments.Any())
+      //   {
+      //      foreach(string serviceArgument in serviceArguments)
+      //      {
+      //         MetaData? metadata = GetMetadataFromFile(logger, serviceArgument);
+      //         if(metadata is not null)
+      //         {
+      //            res.Add(metadata);
+      //         }
+      //      }
+      //   }
+
+      //   return res;
+      //}
 
       internal static string GetRuntimeFromFile(ILogger logger, string serviceArgument)
       {
@@ -62,15 +84,58 @@ namespace Substrate.DotNet.Service.Node
          return null;
       }
 
-      internal static async Task<string?> GetMetadataFromNodeAsync(ILogger logger, string serviceArgument, CancellationToken cancellationToken)
+      
+
+      internal static async Task<uint?> GetBlockVersionFromNodeAsync(ILogger logger, string serviceArgument, uint? blockId, CancellationToken cancellationToken)
       {
-         logger.Information("Loading metadata from node {node}...", serviceArgument);
+         logger.Information("Loading version from node {node}...", serviceArgument);
 
          try
          {
             using var client = new SubstrateClient(new Uri(serviceArgument), ChargeTransactionPayment.Default());
             await client.ConnectAsync(true, cancellationToken);
-            return await client.State.GetMetaDataAsync(cancellationToken);
+
+            RuntimeVersion? version = null;
+            if (blockId is null)
+            {
+               version = await client.State.GetRuntimeVersionAsync(cancellationToken);
+            }
+            else
+            {
+               Hash blockHash = await client.Chain.GetBlockHashAsync(new BlockNumber(blockId.Value), cancellationToken);
+               version = await client.State.GetRuntimeVersionAtAsync(blockHash.Value, cancellationToken);
+            }
+            
+            if(version is not null)
+            {
+               return version.SpecVersion;
+            }   
+         }
+         catch (Exception ex)
+         {
+            logger.Error(ex, $"Error while loading metadata from node: {serviceArgument}.");
+         }
+
+         return null;
+      }
+
+      internal static async Task<string?> GetMetadataFromNodeAsync(ILogger logger, string serviceArgument, uint? blockId, CancellationToken cancellationToken)
+      {
+         logger.Information("Loading metadata from node {node} and block {blockId} ...", serviceArgument, blockId);
+
+         try
+         {
+            using var client = new SubstrateClient(new Uri(serviceArgument), ChargeTransactionPayment.Default());
+            await client.ConnectAsync(true, cancellationToken);
+
+            if(blockId is null)
+            {
+               return await client.State.GetMetaDataAsync(cancellationToken);
+            } else
+            {
+               Hash blockHash = await client.Chain.GetBlockHashAsync(new BlockNumber(blockId.Value), cancellationToken);
+               return await client.State.GetMetaDataAtAsync(blockHash.Value, cancellationToken);
+            }
          }
          catch (Exception ex)
          {

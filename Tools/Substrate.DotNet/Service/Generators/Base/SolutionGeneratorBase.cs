@@ -7,6 +7,7 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Substrate.DotNet.Client.Versions;
 
 namespace Substrate.DotNet.Service.Generators.Base
 {
@@ -33,20 +34,20 @@ namespace Substrate.DotNet.Service.Generators.Base
       /// Generates the classes as well as the solution structure and files
       /// </summary>
       /// <param name="metadata"></param>
-      public void Generate(MetaData metadata)
+      public void Generate(MetaData metadata, BlockVersion? blockVersion = null)
       {
-         GenerateClasses(metadata);
+         GenerateClasses(metadata, blockVersion);
       }
 
       /// <summary>
       /// Generates the respective classes 
       /// </summary>
       /// <param name="metadata"></param>
-      protected abstract void GenerateClasses(MetaData metadata);
+      protected abstract void GenerateClasses(MetaData metadata, BlockVersion? blockVersion = null);
 
-      protected NodeTypeResolver GenerateTypes(Dictionary<uint, NodeType> nodeTypes, string basePath, bool write)
+      protected NodeTypeResolver GenerateTypes(Dictionary<uint, NodeType> nodeTypes, string basePath, bool write, BlockVersion? blockVersion = null)
       {
-         var resolver = new NodeTypeResolver(NodeRuntime, ProjectName, nodeTypes);
+         var resolver = new NodeTypeResolver(NodeRuntime, ProjectName, nodeTypes, blockVersion);
 
          foreach (KeyValuePair<uint, NodeTypeResolved> kvp in resolver.TypeNames)
          {

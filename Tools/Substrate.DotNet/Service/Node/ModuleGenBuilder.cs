@@ -37,6 +37,10 @@ namespace Substrate.DotNet.Service.Node
 
          FileName = "Main" + Module.Name;
          NamespaceName = $"{ProjectName}.Generated.Storage";
+         if(!string.IsNullOrEmpty(ProjectSpecVersion))
+         {
+            NamespaceName += $".{ProjectSpecVersion}";
+         }
          ReferenzName = NamespaceName;
 
          NamespaceDeclarationSyntax typeNamespace = SyntaxFactory

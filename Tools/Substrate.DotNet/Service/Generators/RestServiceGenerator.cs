@@ -3,6 +3,7 @@ using Substrate.DotNet.Service.Node;
 using Substrate.NetApi.Model.Meta;
 using Serilog;
 using System.Collections.Generic;
+using Substrate.DotNet.Client.Versions;
 
 namespace Substrate.DotNet.Service.Generators
 {
@@ -20,7 +21,7 @@ namespace Substrate.DotNet.Service.Generators
          _projectSettings = projectSettings;
       }
 
-      protected override void GenerateClasses(MetaData metadata)
+      protected override void GenerateClasses(MetaData metadata, BlockVersion? blockVersion = null)
       {
          SolutionGeneratorBase.GetGenericStructs(metadata.NodeMetadata.Types);
 

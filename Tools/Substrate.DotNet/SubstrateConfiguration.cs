@@ -49,6 +49,9 @@ namespace Substrate.DotNet
       [JsonProperty("websocket")]
       public string Websocket { get; set; }
 
+      [JsonProperty("blocks")]
+      public uint[] FromBlocks { get; set; }
+
       [JsonIgnore]
       public string Runtime { get; set; }
    }
