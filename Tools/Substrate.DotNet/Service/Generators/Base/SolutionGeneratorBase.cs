@@ -40,10 +40,21 @@ namespace Substrate.DotNet.Service.Generators.Base
       }
 
       /// <summary>
+      /// Generate the classes and refine
+      /// </summary>
+      /// <param name="metadata"></param>
+      /// <param name="blockVersions"></param>
+      public void Generate(List<BlockVersion> blockVersions)
+      {
+         GenerateClasses(blockVersions);
+      }
+
+      /// <summary>
       /// Generates the respective classes 
       /// </summary>
       /// <param name="metadata"></param>
       protected abstract void GenerateClasses(MetaData metadata, BlockVersion? blockVersion = null);
+      protected abstract void GenerateClasses(List<BlockVersion> blockVersions);
 
       protected NodeTypeResolver GenerateTypes(Dictionary<uint, NodeType> nodeTypes, string basePath, bool write, BlockVersion? blockVersion = null)
       {

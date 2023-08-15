@@ -40,7 +40,7 @@ namespace Substrate.DotNet
          {
             for (int i = 0; i < args.Length; i++)
             {
-               args[i] = "upgrade";
+               //args[i] = "upgrade";
                switch (args[i])
                {
                   // Handles dotnet substrate update
@@ -132,6 +132,12 @@ namespace Substrate.DotNet
          Log.Information("Using RestService assembly for RestClient = {assembly}", configuration.RestClientSettings.ServiceAssembly);
 
          IEnumerable<BlockVersion> uniqueBlockVersion = Enumerable.Empty<BlockVersion>();
+         if (HasMultiVersion(configuration))
+         {
+            Log.Information("Fetching multiple metadata from blocks = [{blocks}]", string.Join(", ", configuration.Metadata.FromBlocks));
+
+            uniqueBlockVersion = await EnsureDistinctBlockVersionAsync(configuration.Metadata.Websocket, configuration.Metadata.FromBlocks, token);
+         }
 
          if (fetchMetadata)
          {
@@ -139,11 +145,7 @@ namespace Substrate.DotNet
 
             if (HasMultiVersion(configuration))
             {
-               Log.Information("Fetching multiple metadata from blocks = [{blocks}]", string.Join(", ", configuration.Metadata.FromBlocks));
-
-               uniqueBlockVersion = await EnsureDistinctBlockVersionAsync(configuration.Metadata.Websocket, configuration.Metadata.FromBlocks, token);
-               
-               foreach(BlockVersion blockVersion in uniqueBlockVersion)
+               foreach (BlockVersion blockVersion in uniqueBlockVersion)
                {
                   if (!await GenerateMetadataAsync(configuration.Metadata.Websocket, blockVersion, token))
                   {
@@ -181,13 +183,15 @@ namespace Substrate.DotNet
 
          if (HasMultiVersion(configuration))
          {
-            //BlockVersion blockVersion = new() { BlockNumber = 7500000, SpecVersion = 9110 };
-            foreach (BlockVersion blockVersion in uniqueBlockVersion)
-            {
-               MetaData metadata = ManageMetadata(blockVersion);
-               GenerateNetApiClasses(metadata, configuration, blockVersion);
-            }
-         } else
+            GenerateNetApiClasses(configuration, uniqueBlockVersion.ToList());
+
+            //foreach (BlockVersion blockVersion in uniqueBlockVersion)
+            //{
+            //   MetaData metadata = ManageMetadata(blockVersion);
+            //   GenerateNetApiClasses(metadata, configuration, blockVersion);
+            //}
+         }
+         else
          {
             MetaData metadata = ManageMetadata(null);
             if (metadata == null)
@@ -272,10 +276,10 @@ namespace Substrate.DotNet
       {
          // Before fetching metadata, check if version changed between blocks (otherwise, no need to generate multiple identical metadata files
          var uniqueBlockVersion = new List<BlockVersion>();
-         foreach(uint blockId in blocksId)
+         foreach (uint blockId in blocksId)
          {
             uint? version = await GetMetadata.GetBlockVersionFromNodeAsync(Log.Logger, websocket, blockId, token);
-            if(version is null)
+            if (version is null)
             {
                throw new InvalidOperationException($"Could not query version from node {websocket} and block {blockId} !");
             }
@@ -283,38 +287,21 @@ namespace Substrate.DotNet
             uint? existingVersion = uniqueBlockVersion.FirstOrDefault(x => x.SpecVersion == version)?.BlockNumber;
             if (existingVersion is null)
             {
-               uniqueBlockVersion.Add(new BlockVersion() { BlockNumber = blockId, SpecVersion = version.Value });
-            } else
+               var newVersion = new BlockVersion()
+               {
+                  BlockNumber = blockId,
+                  SpecVersion = version.Value
+               };
+               newVersion.Metadata = ManageMetadata(newVersion);
+               uniqueBlockVersion.Add(newVersion);
+            }
+            else
             {
                Log.Warning("Current blockId = {blockId} has SpecVersion = {specVersion} already has this version in blockId = {otherBlockId}, metadata file is not duplicated", blockId, version.Value, existingVersion);
             }
          }
 
          return uniqueBlockVersion;
-
-         //foreach((uint blockNum, uint version) in uniqueBlockVersion)
-         //{
-         //   string metadata = await GetMetadata.GetMetadataFromNodeAsync(Log.Logger, websocket, blockNum, token);
-         //   if (metadata == null)
-         //   {
-         //      throw new InvalidOperationException($"Could not query metadata from node {websocket}!");
-         //   }
-
-         //   string metadataFilePath = ResolveMetadataFilePath(version);
-
-         //   try
-         //   {
-         //      Log.Information("Saving metadata to {metadataFilePath}...", metadataFilePath);
-         //      File.WriteAllText(metadataFilePath, metadata);
-         //      return true;
-         //   }
-         //   catch (Exception e)
-         //   {
-         //      Log.Error(e, $"Could not save metadata to filepath: {metadataFilePath}!");
-         //   }
-         //}
-
-         //return false;
       }
 
       /// <summary>
@@ -413,6 +400,14 @@ namespace Substrate.DotNet
       {
          var generator = new NetApiGenerator(Log.Logger, configuration.Metadata.Runtime, new ProjectSettings(configuration.Projects.NetApi));
          generator.Generate(metadata, blockVersion);
+      }
+
+      private static void GenerateNetApiClasses(
+         SubstrateConfiguration configuration,
+         List<BlockVersion> blockVersions)
+      {
+         var generator = new NetApiGenerator(Log.Logger, configuration.Metadata.Runtime, new ProjectSettings(configuration.Projects.NetApi));
+         generator.Generate(blockVersions);
       }
 
       /// <summary>

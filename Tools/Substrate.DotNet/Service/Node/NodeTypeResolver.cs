@@ -27,6 +27,7 @@ namespace Substrate.DotNet.Service.Node
 
       public string ClassName => Name.ClassName;
       public string Namespace => Name.Namespace;
+      //public string NamespaceGlobal => Name.NamespaceGlobal;
    }
 
    public enum NodeTypeNamespaceSource
@@ -199,7 +200,7 @@ namespace Substrate.DotNet.Service.Node
                {
                   var nodeTypeComposite = (NodeTypeComposite)nodeType;
                   EnsurePathIsNotNull(nodeTypeComposite.Path);
-                  return NodeTypeName.Generated(this, $"{ProjectSpecVersion}.{ResolvePath(nodeTypeComposite.Path, string.Empty)}");
+                  return NodeTypeName.Generated(this, string.Join('.', new string[] { ProjectSpecVersion, ResolvePath(nodeTypeComposite.Path, string.Empty) }.Where(s => !string.IsNullOrEmpty(s))));
                }
             case TypeDefEnum.Variant:
                {
@@ -276,7 +277,7 @@ namespace Substrate.DotNet.Service.Node
                break;
          }
 
-         return NodeTypeName.Generated(this, $"{ProjectSpecVersion}.{ResolvePath(nodeTypeVariant.Path, variantType)}");
+         return NodeTypeName.Generated(this, string.Join('.', new string[] { ProjectSpecVersion, ResolvePath(nodeTypeVariant.Path, variantType) }.Where(s => !string.IsNullOrEmpty(s))));
       }
 
       public static string GetVariantType(string path)

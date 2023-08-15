@@ -4,6 +4,9 @@ using Substrate.NetApi.Model.Meta;
 using Serilog;
 using System.Collections.Generic;
 using Substrate.DotNet.Client.Versions;
+using System;
+using Microsoft.CodeAnalysis;
+using System.Linq;
 
 namespace Substrate.DotNet.Service.Generators
 {
@@ -17,6 +20,31 @@ namespace Substrate.DotNet.Service.Generators
       public NetApiGenerator(ILogger logger, string nodeRuntime, ProjectSettings projectSettings) : base(logger, nodeRuntime, projectSettings.ProjectName)
       {
          _projectSettings = projectSettings;
+      }
+
+      protected override void GenerateClasses(List<BlockVersion> blockVersions)
+      {
+         Dictionary<uint, NodeType> refinedTypes = new();
+         var resolvers = new List<NodeTypeResolver>();
+
+         foreach (BlockVersion blockVersion in blockVersions)
+         {
+            GetGenericStructs(blockVersion.Metadata.NodeMetadata.Types);
+
+            resolvers.Add(new NodeTypeResolver(NodeRuntime, ProjectName, blockVersion.Metadata.NodeMetadata.Types, null));
+         }
+
+         IEnumerable<KeyValuePair<uint, NodeTypeResolved>> x = resolvers
+            .SelectMany(x => x.TypeNames)
+            .Where(x => x.Value.Name.NamespaceSource == NodeTypeNamespaceSource.Generated);
+
+         IEnumerable<IGrouping<string, KeyValuePair<uint, NodeTypeResolved>>> res = x.GroupBy(x => x.Value.Name.ToString());
+
+         var resTest = res.Where(x => x.Count() < 3).ToList();
+         var res2 = res.Where(x => x.Count() > 3).ToList();
+
+         //GetGenericStructs(metadata.NodeMetadata.Types);
+         //NodeTypeResolver typeDict = GenerateTypes(metadata.NodeMetadata.Types, _projectSettings.ProjectDirectory, write: true, blockVersion: blockVersion);
       }
 
       protected override void GenerateClasses(MetaData metadata, BlockVersion? blockVersion = null)

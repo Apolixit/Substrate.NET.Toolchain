@@ -4,6 +4,7 @@ using Substrate.NetApi.Model.Meta;
 using Serilog;
 using System.Collections.Generic;
 using Substrate.DotNet.Client.Versions;
+using System;
 
 namespace Substrate.DotNet.Service.Generators
 {
@@ -19,6 +20,12 @@ namespace Substrate.DotNet.Service.Generators
       {
          // Rest Service project configuration.
          _projectSettings = projectSettings;
+      }
+
+      protected override void GenerateClasses(List<BlockVersion> blockVersions)
+      {
+         // TODO Romain : implement it
+         throw new NotImplementedException();
       }
 
       protected override void GenerateClasses(MetaData metadata, BlockVersion? blockVersion = null)
