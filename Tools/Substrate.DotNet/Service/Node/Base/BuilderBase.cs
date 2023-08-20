@@ -120,7 +120,8 @@ namespace Substrate.DotNet.Service.Node.Base
          // TODO (svnscha): Change version to given metadata version.
          TargetUnit = TargetUnit.AddUsings(
                 SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Model.Types.Metadata.V14")),
-                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Attributes")));
+                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Attributes")),
+                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System.Threading.Task")));
 
          AttributeArgumentSyntax attributeArgument = SyntaxFactory.AttributeArgument(
              SyntaxFactory.ParseExpression($"TypeDefEnum.{typeDef.TypeDef}"));

@@ -6,14 +6,20 @@ using Substrate.DotNet.Service.Node.Base;
 using Substrate.NetApi.Model.Meta;
 using System.Collections.Generic;
 using System.Linq;
+using static Substrate.DotNet.Client.Versions.NodeTypeRefined;
 
 namespace Substrate.DotNet.Service.Node
 {
    public class StructBuilder : TypeBuilderBase
    {
-      private StructBuilder(string projectName, uint id, NodeTypeComposite typeDef, NodeTypeResolver typeDict)
+      private NodeTypeResolved? _motherClass { get; set; }
+      private LevelTypeNode _levelTypeNode { get; set; }
+
+      private StructBuilder(string projectName, uint id, NodeTypeComposite typeDef, NodeTypeResolver typeDict, NodeTypeResolved? motherClass, LevelTypeNode levelTypeNode)
           : base(projectName, id, typeDef, typeDict)
       {
+         _motherClass = motherClass;
+         _levelTypeNode = levelTypeNode;
       }
 
       private static FieldDeclarationSyntax GetPropertyFieldRoslyn(string name, string baseType)
@@ -125,7 +131,12 @@ namespace Substrate.DotNet.Service.Node
 
       public static BuilderBase Init(string projectName, uint id, NodeTypeComposite typeDef, NodeTypeResolver typeDict)
       {
-         return new StructBuilder(projectName, id, typeDef, typeDict);
+         return new StructBuilder(projectName, id, typeDef, typeDict, null, LevelTypeNode.Child);
+      }
+
+      public static BuilderBase Init(string projectName, uint id, NodeTypeComposite typeDef, NodeTypeResolver typeDict, NodeTypeResolved motherClass, LevelTypeNode levelTypeNode)
+      {
+         return new StructBuilder(projectName, id, typeDef, typeDict, motherClass, levelTypeNode);
       }
 
       public override TypeBuilderBase Create()
@@ -136,15 +147,29 @@ namespace Substrate.DotNet.Service.Node
 
          ReferenzName = $"{NamespaceName}.{ClassName}";
 
-         ClassDeclarationSyntax targetClass = SyntaxFactory.ClassDeclaration(ClassName)
-             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.SealedKeyword))
-             .AddBaseListTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.IdentifierName("BaseType")));
+         string motherClassName = (_motherClass is not null) ? _motherClass.NodeType.Path.Last() : "BaseType";
 
+         ClassDeclarationSyntax targetClass = SyntaxFactory.ClassDeclaration(ClassName)
+             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+             .AddBaseListTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.IdentifierName(motherClassName)));
+         
+         if (_levelTypeNode == LevelTypeNode.Child)
+         {
+            targetClass = targetClass.AddModifiers(SyntaxFactory.Token(SyntaxKind.SealedKeyword));
+         }
+         
          targetClass = AddTargetClassCustomAttributesRoslyn(targetClass, typeDef);
+
+         if (_motherClass is not null)
+         {
+            TargetUnit = TargetUnit.AddUsings(
+                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName(_motherClass.Namespace)));
+         }
+
          // add comment to class if exists
          targetClass = targetClass.WithLeadingTrivia(GetCommentsRoslyn(typeDef.Docs, typeDef));
 
-         if (typeDef.TypeFields != null)
+         if (typeDef.TypeFields != null && !(_levelTypeNode == LevelTypeNode.Child && _motherClass is not null))
          {
             for (int i = 0; i < typeDef.TypeFields.Length; i++)
             {
@@ -181,6 +206,8 @@ namespace Substrate.DotNet.Service.Node
          CompilationUnitSyntax compilationUnit = SyntaxFactory.CompilationUnit()
              .AddUsings(SyntaxFactory.UsingDirective(SyntaxFactory.IdentifierName("System")))
              .AddMembers(namespaceDeclaration);
+
+         
 
          TargetUnit = TargetUnit.AddMembers(compilationUnit.Members.ToArray());
 

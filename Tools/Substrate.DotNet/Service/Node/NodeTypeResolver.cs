@@ -27,7 +27,6 @@ namespace Substrate.DotNet.Service.Node
 
       public string ClassName => Name.ClassName;
       public string Namespace => Name.Namespace;
-      //public string NamespaceGlobal => Name.NamespaceGlobal;
    }
 
    public enum NodeTypeNamespaceSource
@@ -41,7 +40,7 @@ namespace Substrate.DotNet.Service.Node
    {
       public NodeTypeResolver Resolver { get; private set; }
       public NodeTypeNamespaceSource NamespaceSource { get; private set; }
-      private string BaseName { get; set; }
+      public string BaseName { get; set; }
       public string ClassName => $"{ClassNamePrefix}{BaseName.Split('.').Last()}{ClassNameSufix}";
       public string ClassNamePrefix { get; private set; }
       public string ClassNameSufix { get; set; }
@@ -142,6 +141,11 @@ namespace Substrate.DotNet.Service.Node
       public Dictionary<uint, NodeTypeResolved> TypeNames { get; private set; }
       public string NetApiProjectName { get; private set; }
       public string ProjectSpecVersion { get; private set; }
+
+      public void SetTypeNames(Dictionary<uint, NodeTypeResolved> _typeNames)
+      {
+         TypeNames = _typeNames;
+      }
 
       public NodeTypeResolver(string nodeRuntime, string netApiProjectName, Dictionary<uint, NodeType> types, BlockVersion? blockVersion)
       {

@@ -10,6 +10,7 @@ using System.CodeDom.Compiler;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Substrate.DotNet.Service.Generators.Base;
 using System.Linq;
 using System.Collections.Generic;
 using Substrate.NetApi.Model.Rpc;
@@ -40,7 +41,7 @@ namespace Substrate.DotNet
          {
             for (int i = 0; i < args.Length; i++)
             {
-               //args[i] = "upgrade";
+               args[i] = "upgrade";
                switch (args[i])
                {
                   // Handles dotnet substrate update
@@ -183,6 +184,7 @@ namespace Substrate.DotNet
 
          if (HasMultiVersion(configuration))
          {
+            uniqueBlockVersion.ToList().ForEach(b => b.Metadata = ManageMetadata(b));
             GenerateNetApiClasses(configuration, uniqueBlockVersion.ToList());
 
             //foreach (BlockVersion blockVersion in uniqueBlockVersion)
@@ -194,9 +196,16 @@ namespace Substrate.DotNet
          else
          {
             MetaData metadata = ManageMetadata(null);
+            
             if (metadata == null)
             {
                return false;
+            }
+
+            if (configuration.Metadata.IsMetadataRefined)
+            {
+               Log.Information("MetaData refined option is activated");
+               SolutionGeneratorBase.SwitchNodeIds(metadata);
             }
 
             // Service
@@ -292,7 +301,7 @@ namespace Substrate.DotNet
                   BlockNumber = blockId,
                   SpecVersion = version.Value
                };
-               newVersion.Metadata = ManageMetadata(newVersion);
+               //newVersion.Metadata = ManageMetadata(newVersion);
                uniqueBlockVersion.Add(newVersion);
             }
             else

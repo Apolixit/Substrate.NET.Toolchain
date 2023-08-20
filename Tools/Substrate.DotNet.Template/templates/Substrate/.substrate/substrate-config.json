@@ -4,11 +4,11 @@
     "rest_service": "Substrate.RestService",
     "rest_client": "Substrate.RestClient"
   },
-  "metadata": {
-    "websocket": "ws://127.0.0.1:9944",
-    "blocks": [ 7500000, 8000000 ]
-
-  },
+   "metadata": {
+      "websocket": "ws://127.0.0.1:9944",
+      "refineMetadata": true,
+      "blocks": [ 7500000, 8000000 ]
+   },
   "rest_client_settings": {
     "service_assembly": "Substrate.RestService.dll"
   }
