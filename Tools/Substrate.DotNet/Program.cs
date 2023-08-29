@@ -205,7 +205,7 @@ namespace Substrate.DotNet
             if (configuration.Metadata.IsMetadataRefined)
             {
                Log.Information("MetaData refined option is activated");
-               SolutionGeneratorBase.SwitchNodeIds(metadata);
+               SolutionGeneratorBase.RefineVecWrapper(metadata);
             }
 
             // Service

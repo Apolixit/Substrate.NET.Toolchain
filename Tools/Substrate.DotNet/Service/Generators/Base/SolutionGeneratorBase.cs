@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Substrate.DotNet.Client.Versions;
+using Substrate.DotNet.Service.Node.Base;
 
 namespace Substrate.DotNet.Service.Generators.Base
 {
@@ -298,10 +299,27 @@ namespace Substrate.DotNet.Service.Generators.Base
       /// Refine current metadata by removing unecessary classes that encapsulate mostly Rust lists
       /// C# is more permissive so we don't need to wrap BaseVec<> into a class
       /// </summary>
-      public static void SwitchNodeIds(MetaData metadata)
+      public static void RefineVecWrapper(MetaData metadata)
       {
          Dictionary<uint, NodeType> nodeTypes = metadata.NodeMetadata.Types;
-         SwitchNodeIds(metadata, ExtractWrappers(nodeTypes));
+         //SwitchNodeIds(metadata, ExtractWrappers(nodeTypes));
+         //Dictionary<uint, NodeType> nodeTypes = metadata.NodeMetadata.Types;
+         //var metadataNaming = new MetadataNaming(nodeTypes);
+
+         bool hasSomethingChanged = false;
+         do
+         {
+            IDictionary<uint, uint> wrapperNodes = ExtractWrappers(nodeTypes);
+
+            // Loop over all node types to switch sourceId to new destinationId
+            hasSomethingChanged = MapSourceToDestination(nodeTypes, wrapperNodes);
+
+            if (hasSomethingChanged)
+            {
+               //RemoveSourceIds(nodeTypes, wrapperNodes);
+               RefineModules(metadata, wrapperNodes);
+            }
+         } while (hasSomethingChanged);
       }
 
       public static void SwitchNodeIds(MetaData metadata, IDictionary<uint, uint> mapping, bool removeOldIds = true)

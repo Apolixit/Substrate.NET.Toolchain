@@ -152,12 +152,12 @@ namespace Substrate.DotNet.Service.Node
          ClassDeclarationSyntax targetClass = SyntaxFactory.ClassDeclaration(ClassName)
              .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
              .AddBaseListTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.IdentifierName(motherClassName)));
-         
+
          if (_levelTypeNode == LevelTypeNode.Child)
          {
             targetClass = targetClass.AddModifiers(SyntaxFactory.Token(SyntaxKind.SealedKeyword));
          }
-         
+
          targetClass = AddTargetClassCustomAttributesRoslyn(targetClass, typeDef);
 
          if (_motherClass is not null)
@@ -177,13 +177,7 @@ namespace Substrate.DotNet.Service.Node
                string fieldName = GetFieldName(typeField, "value", typeDef.TypeFields.Length, i);
 
                NodeTypeResolved fullItem = GetFullItemPath(typeField.TypeId);
-
-               //FieldDeclarationSyntax field = GetPropertyFieldRoslyn(fieldName, fullItem.ToString());
-               // add comment to field if exists
-               //field = field.WithLeadingTrivia(GetCommentsRoslyn(typeField.Docs, null, fieldName));
-               //targetClass = targetClass.AddMembers(field, GetPropertyWithFieldRoslyn(fieldName, field));
-
-               PropertyDeclarationSyntax propertyDeclaration = GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName(fullItem.ToString()));
+               PropertyDeclarationSyntax propertyDeclaration = GetPropertyDeclaration(fieldName, fullItem);
                propertyDeclaration = propertyDeclaration.WithLeadingTrivia(GetCommentsRoslyn(typeField.Docs, null, fieldName));
 
                targetClass = targetClass.AddMembers(propertyDeclaration);
@@ -207,11 +201,50 @@ namespace Substrate.DotNet.Service.Node
              .AddUsings(SyntaxFactory.UsingDirective(SyntaxFactory.IdentifierName("System")))
              .AddMembers(namespaceDeclaration);
 
-         
-
          TargetUnit = TargetUnit.AddMembers(compilationUnit.Members.ToArray());
 
          return this;
+      }
+
+      /// <summary>
+      /// Manage property classes in mother class
+      /// </summary>
+      /// <param name="fieldName"></param>
+      /// <param name="fullItem"></param>
+      /// <returns></returns>
+      private PropertyDeclarationSyntax GetPropertyDeclaration(string fieldName, NodeTypeResolved fullItem)
+      {
+         if (_levelTypeNode == LevelTypeNode.Mother)
+         {
+            switch (fullItem.NodeType.TypeDef)
+            {
+               case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Variant:
+                  string namespacePath = NodeTypeResolver.GetVariantType(string.Join('.', fullItem.NodeType.Path)) switch
+                  {
+                     "Option" => "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseValue",
+                     "Enum" => "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseEnum",
+                     _ => fullItem.ToString(),
+                  };
+                  return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName(namespacePath));
+
+               case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Sequence:
+               case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Tuple:
+                  return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName("Substrate.NetApi.Model.Types.Base.Abstraction.IBaseArray"));
+
+               case NetApi.Model.Types.Metadata.V14.TypeDefEnum.BitSequence:
+                  return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName("Substrate.NetApi.Model.Types.Base.Abstraction.IBaseBitSeq"));
+
+               case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Compact:
+                  return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName("Substrate.NetApi.Model.Types.Base.Abstraction.IBaseCom"));
+
+
+
+               default:
+                  return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName(fullItem.ToString()));
+            }
+         }
+
+         return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName(fullItem.ToString()));
       }
 
       private static string GetFieldName(NodeTypeField typeField, string alterName, int length, int index)

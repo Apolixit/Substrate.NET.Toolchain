@@ -120,8 +120,7 @@ namespace Substrate.DotNet.Service.Node.Base
          // TODO (svnscha): Change version to given metadata version.
          TargetUnit = TargetUnit.AddUsings(
                 SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Model.Types.Metadata.V14")),
-                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Attributes")),
-                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System.Threading.Task")));
+                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Attributes")));
 
          AttributeArgumentSyntax attributeArgument = SyntaxFactory.AttributeArgument(
              SyntaxFactory.ParseExpression($"TypeDefEnum.{typeDef.TypeDef}"));
@@ -194,5 +193,170 @@ namespace Substrate.DotNet.Service.Node.Base
 // </auto-generated>
 //------------------------------------------------------------------------------");
 
+      public static CompilationUnitSyntax CreateEnumType()
+      {
+         NamespaceDeclarationSyntax enumNamespace = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName("YourNamespaceName"))
+            .AddUsings(
+                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System")),
+                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Model.Types"))
+            );
+
+         ClassDeclarationSyntax classDeclaration = SyntaxFactory.ClassDeclaration("EnumType")
+            .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+            .AddBaseListTypes(
+                SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("BaseType"))
+            );
+
+         var properties = new List<PropertyDeclarationSyntax>
+         {
+            SyntaxFactory.PropertyDeclaration(SyntaxFactory.ParseTypeName("Enum"), "Value")
+                .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+                .AddAccessorListAccessors(
+                    SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                        .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken)),
+                    SyntaxFactory.AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                        .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
+                ),
+
+            SyntaxFactory.PropertyDeclaration(SyntaxFactory.ParseTypeName("Substrate.NetApi.Model.Types.IType"), "Value2")
+                .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+                .AddAccessorListAccessors(
+                    SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                        .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken)),
+                    SyntaxFactory.AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                        .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
+                )
+         };
+
+         MethodDeclarationSyntax fromBaseEnumMethod = SyntaxFactory.MethodDeclaration(SyntaxFactory.ParseTypeName("EnumType"), "FromBaseEnum")
+            .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.StaticKeyword))
+            .AddParameterListParameters(
+                SyntaxFactory.Parameter(SyntaxFactory.Identifier("t"))
+                    .WithType(SyntaxFactory.ParseTypeName("Substrate.NetApi.Model.Types.Base.BaseEnumType"))
+            )
+            .WithBody(SyntaxFactory.Block(
+                SyntaxFactory.ReturnStatement(
+                    SyntaxFactory.ObjectCreationExpression(SyntaxFactory.ParseTypeName("EnumType"))
+                        .WithInitializer(
+                            SyntaxFactory.InitializerExpression(SyntaxKind.ObjectInitializerExpression)
+                                .AddExpressions(
+                                    SyntaxFactory.AssignmentExpression(SyntaxKind.SimpleAssignmentExpression,
+                                        SyntaxFactory.IdentifierName("Value"),
+                                        SyntaxFactory.InvocationExpression(
+                                            SyntaxFactory.MemberAccessExpression(
+                                                SyntaxKind.SimpleMemberAccessExpression,
+                                                SyntaxFactory.IdentifierName("t"),
+                                                SyntaxFactory.IdentifierName("GetValue")
+                                            )
+                                        )
+                                    ),
+                                    SyntaxFactory.AssignmentExpression(SyntaxKind.SimpleAssignmentExpression,
+                                        SyntaxFactory.IdentifierName("Value2"),
+                                        SyntaxFactory.InvocationExpression(
+                                            SyntaxFactory.MemberAccessExpression(
+                                                SyntaxKind.SimpleMemberAccessExpression,
+                                                SyntaxFactory.IdentifierName("t"),
+                                                SyntaxFactory.IdentifierName("GetValue2")
+                                            )
+                                        )
+                                    )
+                                )
+                        )
+                )
+            ));
+
+         MethodDeclarationSyntax encodeMethod = SyntaxFactory.MethodDeclaration(SyntaxFactory.ParseTypeName("byte[]"), "Encode")
+            .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.OverrideKeyword))
+            .WithBody(SyntaxFactory.Block(
+                SyntaxFactory.LocalDeclarationStatement(
+                    SyntaxFactory.VariableDeclaration(SyntaxFactory.ParseTypeName("List<byte>"))
+                        .AddVariables(
+                            SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("bytes"))
+                                .WithInitializer(
+                                    SyntaxFactory.EqualsValueClause(
+                                        SyntaxFactory.ObjectCreationExpression(SyntaxFactory.ParseTypeName("List<byte>"))
+                                    )
+                                )
+                        )
+                ),
+                SyntaxFactory.ExpressionStatement(
+                    SyntaxFactory.InvocationExpression(
+                        SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression,
+                            SyntaxFactory.IdentifierName("bytes"),
+                            SyntaxFactory.IdentifierName("Add")
+                        )
+                    )
+                ),
+                SyntaxFactory.ExpressionStatement(
+                    SyntaxFactory.InvocationExpression(
+                        SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression,
+                            SyntaxFactory.IdentifierName("bytes"),
+                            SyntaxFactory.IdentifierName("AddRange")
+                        )
+                    )
+                ),
+                SyntaxFactory.ExpressionStatement(
+                    SyntaxFactory.AssignmentExpression(SyntaxKind.SimpleAssignmentExpression,
+                        SyntaxFactory.IdentifierName("Bytes"),
+                        SyntaxFactory.InvocationExpression(
+                            SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression,
+                                SyntaxFactory.IdentifierName("bytes"),
+                                SyntaxFactory.IdentifierName("ToArray")
+                            )
+                        )
+                    )
+                ),
+                SyntaxFactory.ExpressionStatement(
+                    SyntaxFactory.AssignmentExpression(SyntaxKind.SimpleAssignmentExpression,
+                        SyntaxFactory.IdentifierName("TypeSize"),
+                        SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression,
+                            SyntaxFactory.IdentifierName("Bytes"),
+                            SyntaxFactory.IdentifierName("Length")
+                        )
+                    )
+                ),
+                SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("Bytes"))
+            ));
+
+         // Create the Decode method
+         MethodDeclarationSyntax decodeMethod = SyntaxFactory.MethodDeclaration(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)), "Decode")
+             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.OverrideKeyword))
+             .AddParameterListParameters(
+                 SyntaxFactory.Parameter(SyntaxFactory.Identifier("byteArray"))
+                     .WithType(SyntaxFactory.ArrayType(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.ByteKeyword)))
+                         .WithRankSpecifiers(SyntaxFactory.SingletonList(SyntaxFactory.ArrayRankSpecifier(
+                             SyntaxFactory.SingletonSeparatedList<ExpressionSyntax>(SyntaxFactory.OmittedArraySizeExpression())
+                         )))
+                     ),
+                 SyntaxFactory.Parameter(SyntaxFactory.Identifier("p"))
+                     .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.RefKeyword)))
+                     .WithType(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.IntKeyword)))
+             )
+             .WithBody(SyntaxFactory.Block(
+                 SyntaxFactory.ThrowStatement(SyntaxFactory.ObjectCreationExpression(
+                     SyntaxFactory.ParseTypeName("InvalidOperationException"))
+                 )
+             ));
+
+
+         classDeclaration = classDeclaration.AddMembers(
+            fromBaseEnumMethod,
+            encodeMethod,
+            decodeMethod
+        );
+
+         // Add properties to the class declaration
+         classDeclaration = classDeclaration.AddMembers(properties.ToArray());
+
+         // Create the compilation unit
+         CompilationUnitSyntax compilationUnit = SyntaxFactory.CompilationUnit()
+             .AddUsings(SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System")))
+             .AddMembers(enumNamespace.AddMembers(classDeclaration));
+
+         CompilationUnitSyntax enumTargetUnit = SyntaxFactory.CompilationUnit();
+         enumTargetUnit = enumTargetUnit.AddMembers(compilationUnit.Members.ToArray());
+
+         return enumTargetUnit;
+      }
    }
 }
