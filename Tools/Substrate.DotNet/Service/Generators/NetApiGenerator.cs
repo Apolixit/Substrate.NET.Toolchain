@@ -12,6 +12,8 @@ using Substrate.ServiceLayer.Extensions;
 using Substrate.NetApi.Model.Types.Metadata.V14;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Substrate.DotNet.Extensions;
+using System.Reflection;
+using static Substrate.DotNet.Service.Node.ModuleGenBuilder;
 
 namespace Substrate.DotNet.Service.Generators
 {
@@ -37,24 +39,209 @@ namespace Substrate.DotNet.Service.Generators
 
          uint lastIndex = BuildVersionsResolvers(blockVersions, resolvers);
 
-         // Add custom EnumType type
-         //(NodeTypeResolver enumTypeResolver, _) = BuildStaticEnumType(lastIndex);
-         //resolvers.Add(enumTypeResolver);
-
          var refinedNodes = resolvers
             .SelectMany(resolver => resolver.TypeNames.Select(nodePair => new NodeTypeRefinedChild(nodePair.Value, null, resolver)))
             .Cast<NodeTypeRefined>()
             .ToList();
 
+         GenerateVersionnedModules(blockVersions, refinedNodes);
+
          IEnumerable<(string name, IEnumerable<NodeTypeRefined> baseNode)> groupedNodes = GroupCommonNodeByVersion(blockVersions, refinedNodes);
 
          var unifiedResolver = new NodeTypeResolver(NodeRuntime, ProjectName, new Dictionary<uint, NodeType>(), null);
-
          IDictionary<uint, uint> mappingMother = GenerateMothersClasses(refinedNodes, groupedNodes, unifiedResolver);
+         Dictionary<uint, ModuleAggregation> motherModules = GenerateMothersModule(refinedNodes, blockVersions);
 
-         MapChildrenTypeToMotherType(refinedNodes, mappingMother);
+         MapChildrenTypeToMotherType(refinedNodes, motherModules, mappingMother);
          BuildConsolidateResolver(refinedNodes, unifiedResolver);
+         //Dictionary<uint, ModuleVersion> motherModules = GenerateMothersModule(refinedNodes, blockVersions);
+         GenerateModulesMultiVersion(motherModules, refinedNodes, unifiedResolver, mappingMother);
+
          GenerateTypesMultiVersion(refinedNodes, _projectSettings.ProjectDirectory, write: true);
+      }
+
+      private void GenerateVersionnedModules(List<BlockVersion> blockVersions, List<NodeTypeRefined> refinedNodes)
+      {
+         foreach (BlockVersion blockVersion in blockVersions)
+         {
+            NodeTypeResolver resolverVersion = refinedNodes.First(x => x.Resolver.ProjectSpecVersion == "v" + blockVersion.SpecVersion).Resolver;
+            GenerateModules(ProjectName, blockVersion.Metadata.NodeMetadata.Modules, resolverVersion, refinedNodes.ToNodeDictionnary(), _projectSettings.ProjectDirectory);
+         }
+      }
+
+      private Dictionary<uint, ModuleAggregation> GenerateMothersModule(List<NodeTypeRefined> refinedNodes, List<BlockVersion> blockVersions)
+      {
+         var modules = new Dictionary<uint, ModuleAggregation>();
+         uint index = 0;
+         //IEnumerable<IGrouping<string, KeyValuePair<uint, PalletModule>>> groupedModules = blockVersions.SelectMany(x => x.Metadata.NodeMetadata.Modules).GroupBy(x => x.Value.Name);
+
+         var versionnedModule = new List<(uint version, PalletModule module)>();
+         foreach (BlockVersion blockVersion in blockVersions)
+         {
+            foreach (KeyValuePair<uint, PalletModule> mod in blockVersion.Metadata.NodeMetadata.Modules)
+            {
+               versionnedModule.Add((blockVersion.SpecVersion, mod.Value));
+            }
+         }
+
+         IEnumerable<IGrouping<string, (uint version, PalletModule module)>> groupedModules = versionnedModule.GroupBy(x => x.module.Name);
+
+         foreach (IGrouping<string, (uint version, PalletModule module)> groupedModule in groupedModules)
+         {
+            //uint version;
+            //uint.TryParse(groupedModule.Key.Skip(1).ToString(), out version);
+
+            //groupedModule.All(x => refinedNodes.First(y => y.Index == x.Value.Errors.TypeId).pa)
+            foreach ((uint currentVersion, PalletModule currentModule) in groupedModule)
+            {
+
+               KeyValuePair<uint, ModuleAggregation> existingModule = modules.SingleOrDefault(x => x.Value.AggregateModule.Name == groupedModule.Key);
+               if (existingModule.Value is null)
+               {
+                  modules.Add(index, new ModuleAggregation()
+                  {
+                     AggregateModule = new PalletModule()
+                     {
+                        Index = currentModule.Index,
+                        Name = currentModule.Name,
+                        Calls = currentModule.Calls is null ? null : new PalletCalls()
+                        {
+                           TypeId = currentModule.Calls.TypeId
+                        },
+                        Errors = currentModule.Errors is null ? null : new PalletErrors()
+                        {
+                           TypeId = currentModule.Errors.TypeId
+                        },
+                        Events = currentModule.Events is null ? null : new PalletEvents()
+                        {
+                           TypeId = currentModule.Events.TypeId
+                        },
+                        Constants = currentModule.Constants is null ? null : currentModule.Constants.Select(x => new PalletConstant() { 
+                           Docs = x.Docs, 
+                           Name = x.Name, 
+                           TypeId = x.TypeId, 
+                           Value = x.Value}).ToArray(),
+                        Storage = currentModule.Storage is null ? null : new PalletStorage()
+                        { Prefix = currentModule.Storage.Prefix, Entries = currentModule.Storage.Entries.Select(x => new Entry()
+                        {
+                           Name = x.Name,
+                           Default = x.Default,
+                           Docs = x.Docs,
+                           Modifier = x.Modifier,
+                           StorageType = x.StorageType,
+                           TypeMap = new(x.TypeMap.Item1, x.TypeMap.Item2 is null ? null : new TypeMap() { Key = x.TypeMap.Item2.Key, Value = x.TypeMap.Item2.Value, Hashers = x.TypeMap.Item2.Hashers})
+                        }).ToArray() }
+                     },
+                     ModuleVersions = new List<ModuleVersion>() { new ModuleVersion() { Version = currentVersion, Module = currentModule } }
+                  });
+               }
+               else
+               {
+                  AffectErrors(refinedNodes, currentModule, existingModule.Value.AggregateModule);
+                  AffectConstants(currentModule, existingModule.Value.AggregateModule);
+                  AffectCalls(refinedNodes, currentModule, existingModule.Value.AggregateModule);
+                  AffectStorage(currentModule, existingModule.Value.AggregateModule);
+
+                  existingModule.Value.ModuleVersions.Add(new ModuleVersion() { Version = currentVersion, Module = currentModule });
+               }
+            }
+            index++;
+         }
+
+         return modules;
+
+         static void AffectErrors(List<NodeTypeRefined> refinedNodes, PalletModule currentModule, PalletModule existingModule)
+         {
+            if (existingModule.Errors is null && currentModule.Errors is null)
+            {
+               return;
+            }
+
+            if (existingModule.Errors is null && currentModule.Errors is not null)
+            {
+               existingModule.Errors = currentModule.Errors;
+               return;
+            }
+
+            var existing = (NodeTypeVariant)refinedNodes.First(x => x.Index == existingModule.Errors.TypeId).NodeResolved.NodeType;
+            var current = (NodeTypeVariant)refinedNodes.First(x => x.Index == currentModule.Errors.TypeId).NodeResolved.NodeType;
+
+            if (existing.Variants is not null && current.Variants is not null)
+            {
+               existing.Variants = existing.Variants.AddIfNotExists(current.Variants, (x, y) => x.Any(e => e.Name == y.Name)).ToArray();
+            }
+         }
+
+         static void AffectConstants(PalletModule currentModule, PalletModule existingModule)
+         {
+            PalletConstant[] current = currentModule.Constants;
+
+            // Error are variant (enum)
+            existingModule.Constants = existingModule.Constants.AddIfNotExists(current, (x, y) => x.Any(e => e.Name == y.Name)).ToArray();
+         }
+
+         static void AffectCalls(List<NodeTypeRefined> refinedNodes, PalletModule currentModule, PalletModule existingModule)
+         {
+            if (existingModule.Calls is null && currentModule.Calls is null)
+            {
+               return;
+            }
+
+            if (existingModule.Calls is null && currentModule.Calls is not null)
+            {
+               existingModule.Calls = currentModule.Calls;
+               return;
+            }
+
+            var existing = (NodeTypeVariant)refinedNodes.First(x => x.Index == existingModule.Calls.TypeId).NodeResolved.NodeType;
+            var current = (NodeTypeVariant)refinedNodes.First(x => x.Index == currentModule.Calls.TypeId).NodeResolved.NodeType;
+
+            if (existing.Variants is not null && current.Variants is not null)
+            {
+               existing.Variants = existing.Variants.AddIfNotExists(current.Variants, (x, y) => x.Any(e => e.Name == y.Name)).ToArray();
+            }
+         }
+
+         static void AffectStorage(PalletModule currentModule, PalletModule existingModule)
+         {
+
+            if (existingModule.Storage is null && currentModule.Storage is null)
+            {
+               return;
+            }
+
+            if (existingModule.Storage is null && currentModule.Storage is not null)
+            {
+               existingModule.Storage.Entries = currentModule.Storage.Entries;
+               return;
+            }
+
+            Entry[] current = currentModule.Storage.Entries;
+            Entry[] currentCopy = currentModule.Storage.Entries.Select(x => new Entry()
+            {
+               Name = x.Name,
+               Default = x.Default,
+               Docs = x.Docs,
+               Modifier = x.Modifier,
+               StorageType = x.StorageType,
+               TypeMap = new(x.TypeMap.Item1, x.TypeMap.Item2 is null ? null : new TypeMap() { Key = x.TypeMap.Item2.Key, Value = x.TypeMap.Item2.Value, Hashers = x.TypeMap.Item2.Hashers })
+            }).ToArray();
+
+            existingModule.Storage.Entries = existingModule.Storage.Entries.AddIfNotExists(currentCopy, (x, y) => x.Any(e => e.Name == y.Name)).ToArray();
+         }
+
+      }
+
+      private void GenerateModulesMultiVersion(Dictionary<uint, ModuleAggregation> modules, List<NodeTypeRefined> refinedNodes, NodeTypeResolver unifiedResolver, IDictionary<uint, uint> mappingMother)
+      {
+         GenerateModules(ProjectName, modules, unifiedResolver, refinedNodes.ToNodeDictionnary(), _projectSettings.ProjectDirectory, TypeModule.Aggregation, mappingMother);
+
+         //foreach (BlockVersion blockVersion in blockVersions)
+         //{
+         //   GenerateModules(ProjectName, blockVersion.Metadata.NodeMetadata.Modules, unifiedResolver, refinedNodes.ToNodeDictionnary(), _projectSettings.ProjectDirectory);
+
+
+         //}
       }
 
       private static IDictionary<uint, uint> GenerateMothersClasses(
@@ -72,9 +259,6 @@ namespace Substrate.DotNet.Service.Generators
             uint motherNodeId = refinedNodes.Last().Index + 1;
             string[] motherPath = buildMotherPath(childNodeTypeComposite);
 
-            // Create an EnumType generic class for each EnumExt<>
-            //NodeTypeField[] motherNodeTypeField = AddEnumTypeTo(enumTypeIndex, refinedNodes, childNodeTypeComposite, CreateEnumTypeMotherNode);
-            
             // Finally create the new mother class
             var motherNodeTypeComposite = new NodeTypeComposite()
             {
@@ -104,17 +288,15 @@ namespace Substrate.DotNet.Service.Generators
                      if (existingField is null)
                      {
                         // If version changed, change mother type to BaseType
-                        //motherNodeTypeComposite.TypeFields.ToList().Add(p);
                         AddPropToMotherTypeField(p, motherNodeTypeComposite);
-                     } else if(existingField.Name is not null)
+                     }
+                     else if (existingField.Name is not null)
                      {
                         ManageNewPropertyVersion(refinedNodes, p, motherNodeTypeComposite, existingField);
                      }
                   });
 
                   mappingMother.Add(otherChildrenTypeComposite.Id, motherNodeId);
-
-                  //otherChildrenTypeComposite.TypeFields = AddEnumTypeTo(enumTypeIndex, refinedNodes, otherChildrenTypeComposite, AdaptEnumTypeChildNode);
                }
             }
 
@@ -125,7 +307,6 @@ namespace Substrate.DotNet.Service.Generators
 
             foreach (NodeTypeRefinedChild childrenNode in baseNode)
             {
-               //((NodeTypeComposite)childrenNode.baseNode.NodeResolved.NodeType).TypeFields = new List<NodeTypeField>().ToArray();
                childrenNode.LinkedTo = motherClass;
             }
          }
@@ -145,7 +326,7 @@ namespace Substrate.DotNet.Service.Generators
             {
                p.Name = newPropName;
 
-               if(!DoesExistInMotherProp(motherNodeTypeComposite, newPropName))
+               if (!DoesExistInMotherProp(motherNodeTypeComposite, newPropName))
                {
                   AddPropToMotherTypeField(p, motherNodeTypeComposite);
                }
@@ -157,13 +338,13 @@ namespace Substrate.DotNet.Service.Generators
             if (n1.Path is not null && n2.Path is null) { return true; }
             if (n1.Path is null && n2.Path is not null) { return true; }
 
-            if(n1.Path is not null && n2.Path is not null)
+            if (n1.Path is not null && n2.Path is not null)
             {
                return string.Join(".", n1.Path) != string.Join(".", n2.Path);
             }
 
             return false;
-            
+
          }
 
          static bool IsTypeChanged(NodeType n1, NodeType n2)
@@ -178,7 +359,8 @@ namespace Substrate.DotNet.Service.Generators
          {
             int num = propName[^1];
             return propName.Take(propName.Length - 2).ToString() + (num + 1);
-         } else
+         }
+         else
          {
             return propName + "1";
          }
@@ -203,52 +385,6 @@ namespace Substrate.DotNet.Service.Generators
          return motherPath;
       }
 
-      //private static NodeTypeField[] AddEnumTypeTo(uint enumTypeIndex, List<NodeTypeRefined> refinedNodes, NodeTypeComposite childNodeTypeComposite, Action<uint, List<NodeTypeField>, List<NodeTypeField>> exec)
-      //{
-      //   var adaptedNodeTypeField = new List<NodeTypeField>(
-      //      childNodeTypeComposite.TypeFields?.ToList() ?? new List<NodeTypeField>());
-
-      //   var variantProperties = adaptedNodeTypeField
-      //      .Where(x => refinedNodes.Single(y => y.Index == x.TypeId).NodeResolved.NodeType.TypeDef == TypeDefEnum.Variant)
-      //      .ToList();
-
-      //   if (variantProperties.Any())
-      //   {
-      //      //exec(enumTypeIndex, adaptedNodeTypeField, variantProperties);
-      //   }
-
-      //   return adaptedNodeTypeField.ToArray();
-      //}
-
-      //private static void CreateEnumTypeMotherNode(uint enumTypeIndex, List<NodeTypeField> motherNodeTypeField, List<NodeTypeField> variantProperties)
-      //{
-      //   variantProperties.ForEach(x => motherNodeTypeField.Remove(x));
-      //   AdaptEnumTypeChildNode(enumTypeIndex, motherNodeTypeField, variantProperties);
-      //   //var newProp = variantProperties.Select(x => new NodeTypeField()
-      //   //{
-      //   //   Docs = x.Docs,
-      //   //   Name = x.Name + "Base",
-      //   //   TypeId = enumTypeIndex,
-      //   //   TypeName = x.TypeName,
-      //   //}).ToList();
-
-      //   //newProp.ForEach(x => motherNodeTypeField.Add(x));
-      //}
-
-      private static void AdaptEnumTypeChildNode(uint enumTypeIndex, List<NodeTypeField> nodeTypeField, List<NodeTypeField> variantProperties)
-      {
-         var newProp = variantProperties.Select(x => new NodeTypeField()
-         {
-            Docs = x.Docs,
-            Name = x.Name + "Base",
-            TypeId = enumTypeIndex,
-            TypeName = x.TypeName,
-         }).ToList();
-
-         newProp.ForEach(x => nodeTypeField.Add(x));
-      }
-
-
       private static void BuildConsolidateResolver(List<NodeTypeRefined> refinedNodes, NodeTypeResolver unifiedResolver)
       {
          var unifiedDictionnary = new Dictionary<uint, NodeTypeResolved>();
@@ -265,7 +401,25 @@ namespace Substrate.DotNet.Service.Generators
          });
       }
 
-      private static void MapChildrenTypeToMotherType(List<NodeTypeRefined> refinedNodes, IDictionary<uint, uint> mappingMother)
+      private static void MapChildrenTypeToMotherType(
+         List<NodeTypeRefined> refinedNodes,
+         Dictionary<uint, ModuleAggregation> motherModules,
+         IDictionary<uint, uint> mappingMother)
+      {
+         bool hasSomethingChanged = false;
+         do
+         {
+            var mn = refinedNodes.Where(x => x.LevelNode == NodeTypeRefined.LevelTypeNode.Mother).ToDictionary(x => x.Index, x => x.NodeResolved.NodeType);
+            hasSomethingChanged = MapSourceToDestination(mn, mappingMother);
+
+            if (hasSomethingChanged)
+            {
+               RefineModules(motherModules.ToDictionary(x => x.Key, y => y.Value.AggregateModule), mappingMother);
+            }
+         } while (hasSomethingChanged);
+      }
+
+      private static void MapChildrenModuleTypeToMotherType(List<NodeTypeRefined> refinedNodes, IDictionary<uint, uint> mappingMother)
       {
          bool hasSomethingChanged = false;
          do
@@ -367,17 +521,22 @@ namespace Substrate.DotNet.Service.Generators
          // GenerateBaseEvents(metadata.NodeMetadata.Modules, typeDict, metadata.NodeMetadata.Types);
       }
 
-      private static void GenerateModules(string projectName, Dictionary<uint, PalletModule> modules, NodeTypeResolver typeDict, Dictionary<uint, NodeType> nodeTypes, string basePath)
+      private static void GenerateModules(string projectName, Dictionary<uint, PalletModule> modules, NodeTypeResolver typeDict, Dictionary<uint, NodeType> nodeTypes, string basePath, TypeModule typeModule = TypeModule.Version)
+      {
+         GenerateModules(projectName, modules.ToDictionary(x => x.Key, y => new ModuleAggregation() { AggregateModule = y.Value }), typeDict, nodeTypes, basePath, typeModule);
+      }
+
+      private static void GenerateModules(string projectName, Dictionary<uint, ModuleAggregation> modules, NodeTypeResolver typeDict, Dictionary<uint, NodeType> nodeTypes, string basePath, TypeModule typeModule = TypeModule.Version, IDictionary<uint, uint> mappingMother = null)
       {
          List<string> modulesResolved = new();
-         foreach (PalletModule module in modules.Values)
+         foreach (ModuleAggregation module in modules.Values)
          {
             ModuleGenBuilder
-                .Init(projectName, module.Index, module, typeDict, nodeTypes)
+                .Init(projectName, module.AggregateModule.Index, module.AggregateModule, typeDict, nodeTypes, typeModule, module.ModuleVersions, mappingMother)
                 .Create()
                 .Build(write: true, out bool _, basePath);
 
-            modulesResolved.Add($"{module.Name}Storage");
+            modulesResolved.Add($"{module.AggregateModule.Name}Storage");
          }
 
          ClientBuilder

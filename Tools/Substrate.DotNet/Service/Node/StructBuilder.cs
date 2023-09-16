@@ -216,32 +216,7 @@ namespace Substrate.DotNet.Service.Node
       {
          if (_levelTypeNode == LevelTypeNode.Mother)
          {
-            switch (fullItem.NodeType.TypeDef)
-            {
-               case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Variant:
-                  string namespacePath = NodeTypeResolver.GetVariantType(string.Join('.', fullItem.NodeType.Path)) switch
-                  {
-                     "Option" => "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseValue",
-                     "Enum" => "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseEnum",
-                     _ => fullItem.ToString(),
-                  };
-                  return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName(namespacePath));
-
-               case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Sequence:
-               case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Tuple:
-                  return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName("Substrate.NetApi.Model.Types.Base.Abstraction.IBaseArray"));
-
-               case NetApi.Model.Types.Metadata.V14.TypeDefEnum.BitSequence:
-                  return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName("Substrate.NetApi.Model.Types.Base.Abstraction.IBaseBitSeq"));
-
-               case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Compact:
-                  return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName("Substrate.NetApi.Model.Types.Base.Abstraction.IBaseCom"));
-
-
-
-               default:
-                  return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName(fullItem.ToString()));
-            }
+            return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName(BuilderBase.GetMotherTypeDeclaration(fullItem)));
          }
 
          return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName(fullItem.ToString()));

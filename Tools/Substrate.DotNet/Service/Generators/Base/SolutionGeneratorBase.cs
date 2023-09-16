@@ -317,7 +317,7 @@ namespace Substrate.DotNet.Service.Generators.Base
             if (hasSomethingChanged)
             {
                //RemoveSourceIds(nodeTypes, wrapperNodes);
-               RefineModules(metadata, wrapperNodes);
+               RefineModules(metadata.NodeMetadata.Modules, wrapperNodes);
             }
          } while (hasSomethingChanged);
       }
@@ -341,7 +341,7 @@ namespace Substrate.DotNet.Service.Generators.Base
                {
                   RemoveSourceIds(nodeTypes, mapping);
                }
-               RefineModules(metadata, mapping);
+               RefineModules(metadata.NodeMetadata.Modules, mapping);
             }
          } while (hasSomethingChanged);
       }
@@ -366,12 +366,48 @@ namespace Substrate.DotNet.Service.Generators.Base
       /// </summary>
       /// <param name="metadata"></param>
       /// <param name="wrapperNodes"></param>
-      private static void RefineModules(MetaData metadata, IDictionary<uint, uint> wrapperNodes)
+      public static void RefineModules(Dictionary<uint, PalletModule> modules, IDictionary<uint, uint> wrapperNodes)
       {
-         Dictionary<uint, PalletModule> modules = metadata.NodeMetadata.Modules;
+         //Dictionary<uint, PalletModule> modules = metadata.NodeMetadata.Modules;
+         if(modules.Values is null)
+         {
+            return;
+         }
+
          foreach (KeyValuePair<uint, PalletModule> module in modules)
          {
             PalletStorage storage = module.Value.Storage;
+
+            if (wrapperNodes.ContainsKey(module.Value.Index))
+            {
+               module.Value.Index = wrapperNodes[module.Value.Index];
+            }
+
+            if (module.Value.Calls is not null && wrapperNodes.ContainsKey(module.Value.Calls.TypeId))
+            {
+               module.Value.Calls.TypeId = wrapperNodes[module.Value.Calls.TypeId];
+            }
+
+            if (module.Value.Errors is not null && wrapperNodes.ContainsKey(module.Value.Errors.TypeId))
+            {
+               module.Value.Errors.TypeId = wrapperNodes[module.Value.Errors.TypeId];
+            }
+
+            if (module.Value.Events is not null && wrapperNodes.ContainsKey(module.Value.Events.TypeId))
+            {
+               module.Value.Events.TypeId = wrapperNodes[module.Value.Events.TypeId];
+            }
+
+            if(module.Value.Constants is not null)
+            {
+               foreach (PalletConstant constant in module.Value.Constants)
+               {
+                  if (wrapperNodes.ContainsKey(constant.TypeId))
+                  {
+                     constant.TypeId = wrapperNodes[constant.TypeId];
+                  }
+               }
+            }
 
             if (storage == null || storage.Entries == null)
             {

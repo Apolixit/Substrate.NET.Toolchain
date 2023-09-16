@@ -1,10 +1,12 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Substrate.DotNet.Client.Versions;
 using Substrate.DotNet.Extensions;
 using Substrate.DotNet.Service.Node.Base;
 using Substrate.NetApi.Model.Extrinsics;
 using Substrate.NetApi.Model.Meta;
+using Substrate.ServiceLayer.Storage;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,14 +15,33 @@ namespace Substrate.DotNet.Service.Node
 {
    public class ModuleGenBuilder : ModuleBuilderBase
    {
-      private ModuleGenBuilder(string projectName, uint id, PalletModule module, NodeTypeResolver typeDict, Dictionary<uint, NodeType> nodeTypes) :
-          base(projectName, id, module, typeDict, nodeTypes)
+      public enum TypeModule
       {
+         /// <summary>
+         /// Module with a given SpecVersion
+         /// </summary>
+         Version,
+         /// <summary>
+         /// Global module which call Version modules
+         /// </summary>
+         Aggregation,
       }
 
-      public static ModuleGenBuilder Init(string projectName, uint id, PalletModule module, NodeTypeResolver typeDict, Dictionary<uint, NodeType> nodeTypes)
+      public TypeModule ModuleType { get; set; }
+      public IEnumerable<ModuleVersion> AssociatedModulesVersion { get; set; }
+      public IDictionary<uint, uint> MappingMother { get; set; }
+
+      private ModuleGenBuilder(string projectName, uint id, PalletModule module, NodeTypeResolver typeDict, Dictionary<uint, NodeType> nodeTypes, TypeModule moduleType, IEnumerable<ModuleVersion> associatedModulesVersion, IDictionary<uint, uint> mappingMother) :
+          base(projectName, id, module, typeDict, nodeTypes)
       {
-         return new ModuleGenBuilder(projectName, id, module, typeDict, nodeTypes);
+         ModuleType = moduleType;
+         AssociatedModulesVersion = associatedModulesVersion;
+         MappingMother = mappingMother;
+      }
+
+      public static ModuleGenBuilder Init(string projectName, uint id, PalletModule module, NodeTypeResolver typeDict, Dictionary<uint, NodeType> nodeTypes, TypeModule moduleType, IEnumerable<ModuleVersion> associatedModulesVersion, IDictionary<uint, uint> mappingMother)
+      {
+         return new ModuleGenBuilder(projectName, id, module, typeDict, nodeTypes, moduleType, associatedModulesVersion, mappingMother);
       }
 
       public override ModuleGenBuilder Create()
@@ -37,7 +58,7 @@ namespace Substrate.DotNet.Service.Node
 
          FileName = "Main" + Module.Name;
          NamespaceName = $"{ProjectName}.Generated.Storage";
-         if(!string.IsNullOrEmpty(ProjectSpecVersion))
+         if (!string.IsNullOrEmpty(ProjectSpecVersion))
          {
             NamespaceName += $".{ProjectSpecVersion}";
          }
@@ -47,7 +68,7 @@ namespace Substrate.DotNet.Service.Node
             .NamespaceDeclaration(SyntaxFactory.ParseName(NamespaceName));
 
          typeNamespace = CreateStorage(typeNamespace);
-         typeNamespace = CreateCalls(typeNamespace);
+         //typeNamespace = CreateCalls(typeNamespace);
          typeNamespace = CreateEvents(typeNamespace);
          typeNamespace = CreateConstants(typeNamespace);
          typeNamespace = CreateErrors(typeNamespace);
@@ -85,6 +106,15 @@ namespace Substrate.DotNet.Service.Node
              .WithLeadingTrivia(GetCommentsRoslyn(new string[] { "Substrate client for the storage calls." }));
          targetClass = targetClass.AddMembers(clientField);
 
+         if (ModuleType == TypeModule.Aggregation)
+         {
+            PropertyDeclarationSyntax blockHashProperty = CreateBlockHashPropery();
+            targetClass = targetClass.AddMembers(blockHashProperty);
+
+            MethodDeclarationSyntax versionMethod = CreateVersionMethod();
+            targetClass = targetClass.AddMembers(versionMethod);
+         }
+
          // Add parameters.
          constructor = constructor.AddParameterListParameters(
              SyntaxFactory.Parameter(SyntaxFactory.Identifier("client"))
@@ -112,17 +142,21 @@ namespace Substrate.DotNet.Service.Node
 
                MethodDeclarationSyntax storageMethod;
                ExpressionStatementSyntax methodInvoke;
-               NodeTypeResolved returnValueStr;
+               string returnValueStr;
+
+               string methodName = ModuleType == TypeModule.Version ? entry.Name : entry.Name + "Async";
 
                if (entry.StorageType == Storage.Type.Plain)
                {
-                  returnValueStr = GetFullItemPath(entry.TypeMap.Item1);
+                  returnValueStr = (ModuleType == TypeModule.Aggregation) ? BuilderBase.GetMotherTypeDeclaration(GetFullItemPath(entry.TypeMap.Item1)) : GetFullItemPath(entry.TypeMap.Item1).ToString();
+
+                  bool returnCompatible = IsReturnTypeCompatible(entry);
+                  returnValueStr = returnCompatible ? returnValueStr : "IType";
 
                   storageMethod = SyntaxFactory
-                     .MethodDeclaration(SyntaxFactory.ParseTypeName($"Task<{returnValueStr}>"), entry.Name);
+                  .MethodDeclaration(SyntaxFactory.ParseTypeName($"Task<{returnValueStr}>"), methodName);
 
-                  parameterMethod = parameterMethod.AddBodyStatements(
-                     SyntaxFactory.ReturnStatement(GetStorageStringRoslyn(storage.Prefix, entry.Name, entry.StorageType)));
+                  parameterMethod = CreateParameterMethod(parameterMethod, entry, storage);
 
                   methodInvoke = SyntaxFactory.ExpressionStatement(SyntaxFactory.InvocationExpression(SyntaxFactory.IdentifierName(parameterMethod.Identifier)));
 
@@ -135,19 +169,29 @@ namespace Substrate.DotNet.Service.Node
                   TypeMap typeMap = entry.TypeMap.Item2;
                   Storage.Hasher[] hashers = typeMap.Hashers;
                   NodeTypeResolved key = GetFullItemPath(typeMap.Key);
-                  returnValueStr = GetFullItemPath(typeMap.Value);
+                  string keyValueStr = (ModuleType == TypeModule.Aggregation) ? BuilderBase.GetMotherTypeDeclaration(key) : key.ToString();
+                  bool keyCompatible = IsKeyTypeCompatible(entry);
+                  keyValueStr = keyCompatible ? keyValueStr : "IType";
+
+                  returnValueStr = (ModuleType == TypeModule.Aggregation) ? BuilderBase.GetMotherTypeDeclaration(GetFullItemPath(typeMap.Value)) : GetFullItemPath(typeMap.Value).ToString();
+                  bool returnCompatible = IsReturnTypeCompatible(entry);
+                  returnValueStr = returnCompatible ? returnValueStr : "IType";
 
                   storageMethod = SyntaxFactory
-                     .MethodDeclaration(SyntaxFactory.ParseTypeName($"Task<{returnValueStr}>"), entry.Name);
+                     .MethodDeclaration(SyntaxFactory.ParseTypeName($"Task<{returnValueStr}>"), methodName);
 
+                  //parameterMethod = parameterMethod
+                  //   .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("key"))
+                  //   .WithType(SyntaxFactory.ParseTypeName(key.ToString())))
+                  //   .AddBodyStatements(SyntaxFactory.ReturnStatement(GetStorageStringRoslyn(storage.Prefix, entry.Name, entry.StorageType, hashers)));
                   parameterMethod = parameterMethod
                      .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("key"))
-                     .WithType(SyntaxFactory.ParseTypeName(key.ToString())))
-                     .AddBodyStatements(SyntaxFactory.ReturnStatement(GetStorageStringRoslyn(storage.Prefix, entry.Name, entry.StorageType, hashers)));
+                     .WithType(SyntaxFactory.ParseTypeName(keyValueStr)));
+                  parameterMethod = CreateParameterMethod(parameterMethod, entry, storage, hashers);
 
                   storageMethod = storageMethod
                      .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("key"))
-                     .WithType(SyntaxFactory.ParseTypeName(key.ToString())));
+                     .WithType(SyntaxFactory.ParseTypeName(keyValueStr)));
 
                   ArgumentListSyntax argumentList = SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(new[] { SyntaxFactory.Argument(SyntaxFactory.IdentifierName("key")) }));
 
@@ -155,34 +199,35 @@ namespace Substrate.DotNet.Service.Node
                      SyntaxFactory.InvocationExpression(SyntaxFactory.IdentifierName(parameterMethod.Identifier), argumentList));
 
                   // add storage key mapping in constructor
-                  constructor = constructor.AddBodyStatements(AddPropertyValuesRoslyn(GetStorageMapStringRoslyn(key.ToString(), returnValueStr.ToString(), storage.Prefix, entry.Name, hashers), "_client.StorageKeyDict"));
+                  constructor = constructor.AddBodyStatements(AddPropertyValuesRoslyn(GetStorageMapStringRoslyn(keyValueStr, returnValueStr.ToString(), storage.Prefix, entry.Name, hashers), "_client.StorageKeyDict"));
                }
                else
                {
                   throw new NotImplementedException();
                }
 
-               storageMethod = storageMethod
-                  .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.AsyncKeyword)))
-                  .WithLeadingTrivia(GetCommentsRoslyn(entry.Docs, null, entry.Name)); // Assuming GetComments() returns a string
+               storageMethod = CreateStorageMethod(storageMethod, entry, methodInvoke, returnValueStr);
+               //storageMethod = storageMethod
+               //   .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.AsyncKeyword)))
+               //   .WithLeadingTrivia(GetCommentsRoslyn(entry.Docs, null, entry.Name)); // Assuming GetComments() returns a string
 
-               storageMethod = storageMethod
-                  .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("token")).WithType(SyntaxFactory.ParseTypeName("CancellationToken")));
+               //storageMethod = storageMethod
+               //   .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("token")).WithType(SyntaxFactory.ParseTypeName("CancellationToken")));
 
-               VariableDeclarationSyntax variableDeclaration1 = SyntaxFactory.VariableDeclaration(SyntaxFactory.ParseTypeName("string"))
-                   .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("parameters"), null, SyntaxFactory.EqualsValueClause(methodInvoke.Expression)));
+               //VariableDeclarationSyntax variableDeclaration1 = SyntaxFactory.VariableDeclaration(SyntaxFactory.ParseTypeName("string"))
+               //    .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("parameters"), null, SyntaxFactory.EqualsValueClause(methodInvoke.Expression)));
 
-               storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.LocalDeclarationStatement(variableDeclaration1));
+               //storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.LocalDeclarationStatement(variableDeclaration1));
 
-               string resultString = GetInvoceString(returnValueStr.ToString());
+               //string resultString = GetInvoceString(returnValueStr.ToString());
 
-               VariableDeclarationSyntax variableDeclaration2 = SyntaxFactory
-                  .VariableDeclaration(SyntaxFactory.IdentifierName("var"))
-                  .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("result"), null, SyntaxFactory.EqualsValueClause(SyntaxFactory.IdentifierName(resultString))));
+               //VariableDeclarationSyntax variableDeclaration2 = SyntaxFactory
+               //   .VariableDeclaration(SyntaxFactory.IdentifierName("var"))
+               //   .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("result"), null, SyntaxFactory.EqualsValueClause(SyntaxFactory.IdentifierName(resultString))));
 
-               storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.LocalDeclarationStatement(variableDeclaration2));
+               //storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.LocalDeclarationStatement(variableDeclaration2));
 
-               storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("result")));
+               //storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("result")));
 
                // add parameter method to the class
                targetClass = targetClass.AddMembers(parameterMethod);
@@ -195,12 +240,8 @@ namespace Substrate.DotNet.Service.Node
                       .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.StaticKeyword)))
                       .WithLeadingTrivia(GetCommentsRoslyn(new string[] { "Default value as hex string" }, null, storageDefault));
 
-                  // Add return statement
-                  defaultMethod = defaultMethod.WithBody(SyntaxFactory.Block(SyntaxFactory.ReturnStatement(
-                      SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal("0x" + BitConverter.ToString(entry.Default).Replace("-", string.Empty))))));
-
                   // add default method to the class
-                  targetClass = targetClass.AddMembers(defaultMethod);
+                  targetClass = targetClass.AddMembers(CreateDefaultMethod(defaultMethod, entry));
                }
 
                // add storage method to the class
@@ -215,6 +256,328 @@ namespace Substrate.DotNet.Service.Node
          typeNamespace = typeNamespace.AddMembers(targetClass);
 
          return typeNamespace;
+      }
+
+      #region Custom aggregation behavior
+      private static PropertyDeclarationSyntax CreateBlockHashPropery()
+      {
+         // SyntaxFactory.NullableType(SyntaxFactory.ParseTypeName("string")), "BlockHash")
+         return SyntaxFactory.PropertyDeclaration(
+                        SyntaxFactory.ParseTypeName("string"), "BlockHash")
+                        .WithModifiers(
+                           SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+                        )
+                        .WithAccessorList(
+                           SyntaxFactory.AccessorList(
+                              SyntaxFactory.List(
+                                 new[]
+                                {
+                        SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                            .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken)),
+                        SyntaxFactory.AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                            .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
+                                }
+                           ))
+                        )
+                        .WithInitializer(
+                           SyntaxFactory.EqualsValueClause(SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression))
+                        ).WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken));
+      }
+
+      private static MethodDeclarationSyntax CreateVersionMethod()
+      {
+         MethodDeclarationSyntax versionMethod = SyntaxFactory
+                                .MethodDeclaration(SyntaxFactory.ParseTypeName("Task<uint>"), "GetVersionAsync")
+                                .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.AsyncKeyword)))
+                                .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("token")).WithType(SyntaxFactory.ParseTypeName("CancellationToken")));
+
+
+         string resultString = "await _client.State.GetRuntimeVersionAtAsync(BlockHash, token)";
+
+         VariableDeclarationSyntax variableDeclaration = SyntaxFactory
+            .VariableDeclaration(SyntaxFactory.IdentifierName("var"))
+            .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("result"), null, SyntaxFactory.EqualsValueClause(SyntaxFactory.IdentifierName(resultString))));
+
+         versionMethod = versionMethod.AddBodyStatements(SyntaxFactory.LocalDeclarationStatement(variableDeclaration));
+
+         versionMethod = versionMethod.AddBodyStatements(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("result.SpecVersion")));
+         return versionMethod;
+      }
+      #endregion
+
+      #region Default method
+      private MethodDeclarationSyntax CreateDefaultMethod(MethodDeclarationSyntax defaultMethod, Entry entry)
+      {
+         return ModuleType == TypeModule.Version ?
+                              CreateDefaultVersionMethod(defaultMethod, entry) :
+                              CreateDefaultAggregationMethod(defaultMethod, entry);
+      }
+
+      private MethodDeclarationSyntax CreateDefaultVersionMethod(MethodDeclarationSyntax defaultMethod, Entry entry)
+      {
+         // Add return statement
+         defaultMethod = defaultMethod.WithBody(SyntaxFactory.Block(SyntaxFactory.ReturnStatement(
+             SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal("0x" + BitConverter.ToString(entry.Default).Replace("-", string.Empty))))));
+
+         return defaultMethod;
+      }
+
+      private MethodDeclarationSyntax CreateDefaultAggregationMethod(MethodDeclarationSyntax defaultMethod, Entry entry)
+      {
+         return defaultMethod.AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("version")).WithType(SyntaxFactory.ParseTypeName("uint")))
+            .WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, "string", TypeMethod.Default));
+      }
+      #endregion
+
+      #region Storage method
+      private MethodDeclarationSyntax CreateStorageMethod(MethodDeclarationSyntax storageMethod, Entry entry, ExpressionStatementSyntax methodInvoke, string returnValue)
+      {
+         storageMethod = storageMethod
+                  .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.AsyncKeyword)))
+                  .WithLeadingTrivia(GetCommentsRoslyn(entry.Docs, null, entry.Name)); // Assuming GetComments() returns a string
+
+         storageMethod = storageMethod
+            .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("token")).WithType(SyntaxFactory.ParseTypeName("CancellationToken")));
+
+         return ModuleType == TypeModule.Version ?
+            CreateStorageVersionMethod(storageMethod, methodInvoke, returnValue.ToString()) :
+            CreateStorageAggregationMethod(storageMethod, entry, returnValue.ToString());
+      }
+
+      private MethodDeclarationSyntax CreateStorageVersionMethod(MethodDeclarationSyntax storageMethod, ExpressionStatementSyntax methodInvoke, string returnValueStr)
+      {
+         VariableDeclarationSyntax variableDeclaration1 = SyntaxFactory.VariableDeclaration(SyntaxFactory.ParseTypeName("string"))
+             .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("parameters"), null, SyntaxFactory.EqualsValueClause(methodInvoke.Expression)));
+
+         storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.LocalDeclarationStatement(variableDeclaration1));
+
+         string resultString = GetInvoceString(returnValueStr.ToString());
+
+         VariableDeclarationSyntax variableDeclaration2 = SyntaxFactory
+            .VariableDeclaration(SyntaxFactory.IdentifierName("var"))
+            .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("result"), null, SyntaxFactory.EqualsValueClause(SyntaxFactory.IdentifierName(resultString))));
+
+         storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.LocalDeclarationStatement(variableDeclaration2));
+
+         storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("result")));
+
+         return storageMethod;
+      }
+
+      private MethodDeclarationSyntax CreateStorageAggregationMethod(MethodDeclarationSyntax storageMethod, Entry entry, string returnValueStr)
+      {
+         return storageMethod.WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, returnValueStr, TypeMethod.Storage));
+      }
+      #endregion
+
+      #region Parameter method
+      private MethodDeclarationSyntax CreateParameterMethod(
+         MethodDeclarationSyntax parameterMethod,
+         Entry entry, PalletStorage storage, Storage.Hasher[] hashers = null)
+      {
+         return ModuleType == TypeModule.Version ?
+                              CreateParameterVersionMethod(parameterMethod, entry, storage, hashers) :
+                              CreateParameterAggregationMethod(parameterMethod, entry);
+      }
+
+      private MethodDeclarationSyntax CreateParameterVersionMethod(MethodDeclarationSyntax parameterMethod, Entry entry, PalletStorage storage, Storage.Hasher[] hashers = null)
+      {
+         return parameterMethod.AddBodyStatements(
+                     SyntaxFactory.ReturnStatement(GetStorageStringRoslyn(storage.Prefix, entry.Name, entry.StorageType, hashers)));
+      }
+
+      private MethodDeclarationSyntax CreateParameterAggregationMethod(MethodDeclarationSyntax parameterMethod, Entry entry)
+      {
+         return parameterMethod.AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("version")).WithType(SyntaxFactory.ParseTypeName("uint")))
+            .WithBody(
+                     GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, "string", TypeMethod.Parameter));
+      }
+      #endregion
+
+      public enum TypeMethod
+      {
+         Default,
+         Parameter,
+         Storage
+      }
+
+      private BlockSyntax GetStorageStringRoslynAggregation(
+            Entry entry,
+            IEnumerable<ModuleVersion> versions,
+            string returnTypeStr,
+            TypeMethod typeMethod)
+      {
+         var statements = new List<StatementSyntax>();
+
+         if (typeMethod == TypeMethod.Storage)
+         {
+            string resultVersion = "await GetVersionAsync(token)";
+
+            VariableDeclarationSyntax versionDeclaration = SyntaxFactory
+               .VariableDeclaration(SyntaxFactory.IdentifierName("var"))
+               .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("version"), null, SyntaxFactory.EqualsValueClause(SyntaxFactory.IdentifierName(resultVersion))));
+            statements.Add(SyntaxFactory.LocalDeclarationStatement(versionDeclaration));
+         }
+
+         // SyntaxFactory.NullableType(SyntaxFactory.ParseTypeName(returnTypeStr)))
+         VariableDeclarationSyntax paramResultVariable =
+             SyntaxFactory.VariableDeclaration(
+                 SyntaxFactory.ParseTypeName(returnTypeStr))
+             .AddVariables(
+                 SyntaxFactory.VariableDeclarator("param")
+                 .WithInitializer(
+                     SyntaxFactory.EqualsValueClause(
+                         SyntaxFactory.LiteralExpression(
+                             SyntaxKind.NullLiteralExpression))));
+         statements.Add(SyntaxFactory.LocalDeclarationStatement(paramResultVariable));
+
+         string typeMethodName = string.Empty;
+         if (typeMethod == TypeMethod.Parameter)
+         {
+            typeMethodName = "Params";
+         }
+         else if (typeMethod == TypeMethod.Default)
+         {
+            typeMethodName = "Default";
+         }
+
+         var parameters = new List<string>();
+         string keyParam = "key";
+         if (entry.StorageType == Storage.Type.Map && typeMethod != TypeMethod.Default)
+         {
+            parameters.Add(keyParam);
+         }
+         if (typeMethod == TypeMethod.Storage)
+         {
+            parameters.Add("token");
+         }
+
+         //bool compatible = IsReturnTypeCompatible(entry, versions);
+
+         foreach (ModuleVersion version in versions)
+         {
+            Entry childEntry = version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name);
+            if (childEntry is null)
+            {
+               continue;
+            }
+
+            // Check if we have to cast "key" param
+            if (parameters.Any(x => x == keyParam))
+            {
+               //NodeTypeResolved motherModuleType = GetFullItemPath(entry.TypeMap.Item2.Key);
+               NodeTypeResolved childModuleType = GetFullItemPath(childEntry.TypeMap.Item2.Key);
+
+               //string castType = motherModuleType != childModuleType ? $"({childModuleType})" : string.Empty;
+               string castType = $"({childModuleType})";
+               parameters.Remove(keyParam);
+
+               keyParam = castType + "key";
+               parameters.Insert(0, keyParam);
+            }
+
+            string paramMethod = $"{entry.Name}{typeMethodName}({(parameters.Any() ? string.Join(",", parameters) : string.Empty)})";
+
+            string call = $"{(typeMethod == TypeMethod.Storage ? "await new " : string.Empty)}{NamespaceName}.v{version.Version}.{Module.Name}Storage{(typeMethod == TypeMethod.Storage ? "(_client)" : string.Empty)}.{paramMethod}";
+
+            statements.Add(SyntaxFactory.IfStatement(
+                SyntaxFactory.BinaryExpression(
+                    SyntaxKind.EqualsExpression,
+                    SyntaxFactory.IdentifierName("version"),
+                    SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(version.Version))
+                 ),
+                SyntaxFactory.ExpressionStatement(
+                    SyntaxFactory.AssignmentExpression(
+                        SyntaxKind.SimpleAssignmentExpression,
+                        SyntaxFactory.IdentifierName("param"),
+                        SyntaxFactory.IdentifierName(call)
+                    )
+                )
+            ));
+         }
+
+         IfStatementSyntax ifStatement = SyntaxFactory.IfStatement(
+             SyntaxFactory.BinaryExpression(
+                 SyntaxKind.EqualsExpression,
+                 SyntaxFactory.IdentifierName("param"),
+                 SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression)
+             ),
+             SyntaxFactory.ThrowStatement(
+                 SyntaxFactory.ObjectCreationExpression(
+                     SyntaxFactory.QualifiedName(
+                         SyntaxFactory.ParseName("System"),
+                         SyntaxFactory.IdentifierName("InvalidOperationException")
+                     ), SyntaxFactory.ArgumentList(
+                 SyntaxFactory.SingletonSeparatedList(
+                     SyntaxFactory.Argument(
+                         SyntaxFactory.LiteralExpression(
+                             SyntaxKind.StringLiteralExpression,
+                             SyntaxFactory.Literal("Error while fetching data")
+                         )
+                     )
+                 )
+             ), null)
+             )
+         );
+
+         statements.Add(ifStatement);
+         statements.Add(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("param")));
+         return SyntaxFactory.Block(
+             statements
+         );
+      }
+
+      private bool IsReturnTypeCompatible(Entry entry)
+      {
+         if(entry.StorageType == Storage.Type.Plain)
+         {
+            return IsTypeCompatible(entry, (Entry childEntry) => childEntry.TypeMap.Item1);
+         } else if(entry.StorageType == Storage.Type.Map)
+         {
+            return IsTypeCompatible(entry, (Entry childEntry) => childEntry.TypeMap.Item2.Value);
+         }
+
+         throw new NotImplementedException();
+      }
+         
+
+      private bool IsKeyTypeCompatible(Entry entry)
+         => IsTypeCompatible(entry, (Entry childEntry) => childEntry.TypeMap.Item2.Key);
+
+      private bool IsTypeCompatible(Entry entry, Func<Entry, uint> typeCompare)
+      {
+         if(AssociatedModulesVersion is null || !AssociatedModulesVersion.Any())
+         {
+            return true;
+         }
+
+         uint? valueReturn = null;
+         bool compatible = AssociatedModulesVersion
+            .Where(version => version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name) is not null)
+            .Select(version => version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name))
+            .All(childEntry =>
+            {
+               //if (childEntry.TypeMap.Item2 is null)
+               //{
+               //   return true;
+               //}
+
+               NodeTypeResolved childModuleType = GetFullItemPath(typeCompare(childEntry));
+               uint value;
+               bool found = MappingMother.TryGetValue(childModuleType.NodeType.Id, out value);
+               if (!found)
+               {
+                  valueReturn = uint.MaxValue;
+                  valueReturn = uint.MinValue;
+               }
+               else if (valueReturn == null)
+               {
+                  valueReturn = value;
+               }
+
+               return value == valueReturn;
+            });
+         return compatible;
       }
 
       private NamespaceDeclarationSyntax CreateCalls(NamespaceDeclarationSyntax namespaceDeclaration)

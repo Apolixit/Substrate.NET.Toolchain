@@ -69,6 +69,34 @@ namespace Substrate.DotNet.Service.Node.Base
          return fullItem;
       }
 
+      public static string GetMotherTypeDeclaration(NodeTypeResolved fullItem)
+      {
+         switch (fullItem.NodeType.TypeDef)
+         {
+            case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Variant:
+               string namespacePath = NodeTypeResolver.GetVariantType(string.Join('.', fullItem.NodeType.Path)) switch
+               {
+                  "Option" => "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseValue",
+                  "Enum" => "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseEnum",
+                  _ => fullItem.ToString(),
+               };
+               return namespacePath;
+
+            case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Sequence:
+            case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Tuple:
+               return "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseEnumerable";
+
+            case NetApi.Model.Types.Metadata.V14.TypeDefEnum.BitSequence:
+               return "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseEnumerable";
+
+            case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Compact:
+               return "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseCom";
+
+            default:
+               return fullItem.ToString();
+         }
+      }
+
       public virtual void Build(bool write, out bool success, string basePath = null)
       {
          success = Success;
