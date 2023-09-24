@@ -1,12 +1,15 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Substrate.DotNet.Client.Versions;
 using Substrate.DotNet.Extensions;
 using Substrate.DotNet.Service.Node.Base;
 using Substrate.NetApi.Model.Meta;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using static Substrate.DotNet.Client.Versions.NodeTypeRefined;
+using static Substrate.DotNet.Service.Node.ModuleGenBuilder;
 
 namespace Substrate.DotNet.Service.Node
 {
@@ -14,12 +17,14 @@ namespace Substrate.DotNet.Service.Node
    {
       private NodeTypeResolved? _motherClass { get; set; }
       private LevelTypeNode _levelTypeNode { get; set; }
+      private List<NodeTypeRefined> _nodeTypes { get; set; } = new List<NodeTypeRefined>();
 
-      private StructBuilder(string projectName, uint id, NodeTypeComposite typeDef, NodeTypeResolver typeDict, NodeTypeResolved? motherClass, LevelTypeNode levelTypeNode)
+      private StructBuilder(string projectName, uint id, NodeTypeComposite typeDef, NodeTypeResolver typeDict, NodeTypeResolved? motherClass, LevelTypeNode levelTypeNode, List<NodeTypeRefined> nodeTypes)
           : base(projectName, id, typeDef, typeDict)
       {
          _motherClass = motherClass;
          _levelTypeNode = levelTypeNode;
+         _nodeTypes = nodeTypes;
       }
 
       private static FieldDeclarationSyntax GetPropertyFieldRoslyn(string name, string baseType)
@@ -69,15 +74,84 @@ namespace Substrate.DotNet.Service.Node
          return prop;
       }
 
+      private MethodDeclarationSyntax GetCreateByVersionRoslyn(NodeTypeComposite typeDef)
+      {
+         IEnumerable<NodeTypeRefined> linkedToVersion = _nodeTypes.Where(x => x is NodeTypeRefinedChild child && child.LinkedTo is not null && child.LinkedTo.NodeResolved.NodeType.Id == typeDef.Id);
+
+         TypeSyntax motherTypeSyntax = SyntaxFactory.ParseTypeName(BuilderBase.GetMotherTypeDeclaration(GetFullItemPath(typeDef.Id)));
+
+         MethodDeclarationSyntax createMethod = SyntaxFactory.MethodDeclaration(motherTypeSyntax, "Create")
+             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+             .AddModifiers(SyntaxFactory.Token(SyntaxKind.StaticKeyword))
+             .AddParameterListParameters(
+                 SyntaxFactory.Parameter(SyntaxFactory.Identifier("data")).WithType(SyntaxFactory.ParseTypeName("byte[]")),
+                 SyntaxFactory.Parameter(SyntaxFactory.Identifier("version")).WithType(SyntaxFactory.ParseTypeName("uint")));
+
+         VariableDeclarationSyntax paramResultVariable =
+             SyntaxFactory.VariableDeclaration(motherTypeSyntax)
+             .AddVariables(
+                 SyntaxFactory.VariableDeclarator("instance")
+                 .WithInitializer(
+                     SyntaxFactory.EqualsValueClause(
+                         SyntaxFactory.LiteralExpression(
+                             SyntaxKind.NullLiteralExpression))));
+
+         var statements = new List<StatementSyntax>
+         {
+            SyntaxFactory.LocalDeclarationStatement(paramResultVariable)
+         };
+
+         foreach (NodeTypeRefined nodeTypeRefined in linkedToVersion)
+         {
+
+            StatementSyntax newInstance = SyntaxFactory.ParseStatement($"instance = new {GetFullItemPath(nodeTypeRefined.NodeResolved.NodeType.Id)}();");
+
+            ExpressionStatementSyntax callMethod = SyntaxFactory.ExpressionStatement(
+               SyntaxFactory.InvocationExpression(
+                  SyntaxFactory.MemberAccessExpression(
+                     SyntaxKind.SimpleMemberAccessExpression,
+                     SyntaxFactory.IdentifierName("instance"),
+                     SyntaxFactory.IdentifierName("Create")
+                  ),
+                  SyntaxFactory.ArgumentList(
+                     SyntaxFactory.SingletonSeparatedList(
+                        SyntaxFactory.Argument(
+                              SyntaxFactory.IdentifierName("data")
+                        )
+                     )
+                  )
+               )
+            );
+
+            statements.Add(SyntaxFactory.IfStatement(
+                   SyntaxFactory.BinaryExpression(
+                       SyntaxKind.EqualsExpression,
+            SyntaxFactory.IdentifierName("version"),
+                       SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(nodeTypeRefined.ToNumberVersion()))
+                    ),
+                   SyntaxFactory.Block(
+                      newInstance,
+                      callMethod
+                  )
+               ));
+         }
+
+         statements.Add(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("instance")));
+         createMethod = createMethod.WithBody(SyntaxFactory.Block(statements));
+
+         return createMethod;
+      }
+
       private MethodDeclarationSyntax GetDecodeRoslyn(NodeTypeField[] typeFields)
       {
          MethodDeclarationSyntax decodeMethod = SyntaxFactory.MethodDeclaration(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)), "Decode")
              .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
-             .AddModifiers(SyntaxFactory.Token(SyntaxKind.OverrideKeyword))
              .AddParameterListParameters(
                  SyntaxFactory.Parameter(SyntaxFactory.Identifier("byteArray")).WithType(SyntaxFactory.ParseTypeName("byte[]")),
-                 SyntaxFactory.Parameter(SyntaxFactory.Identifier("p")).WithType(SyntaxFactory.ParseTypeName("int")).WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.RefKeyword))))
-             .WithBody(SyntaxFactory.Block());
+                 SyntaxFactory.Parameter(SyntaxFactory.Identifier("p")).WithType(SyntaxFactory.ParseTypeName("int")).WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.RefKeyword))));
+
+         decodeMethod = decodeMethod.AddModifiers(SyntaxFactory.Token(SyntaxKind.OverrideKeyword))
+          .WithBody(SyntaxFactory.Block());
 
          decodeMethod = decodeMethod.AddBodyStatements(SyntaxFactory.ParseStatement("var start = p;"));
 
@@ -131,12 +205,12 @@ namespace Substrate.DotNet.Service.Node
 
       public static BuilderBase Init(string projectName, uint id, NodeTypeComposite typeDef, NodeTypeResolver typeDict)
       {
-         return new StructBuilder(projectName, id, typeDef, typeDict, null, LevelTypeNode.Child);
+         return new StructBuilder(projectName, id, typeDef, typeDict, null, LevelTypeNode.Child, new List<NodeTypeRefined>());
       }
 
-      public static BuilderBase Init(string projectName, uint id, NodeTypeComposite typeDef, NodeTypeResolver typeDict, NodeTypeResolved motherClass, LevelTypeNode levelTypeNode)
+      public static BuilderBase Init(string projectName, uint id, NodeTypeComposite typeDef, NodeTypeResolver typeDict, NodeTypeResolved motherClass, LevelTypeNode levelTypeNode, List<NodeTypeRefined> nodeTypes)
       {
-         return new StructBuilder(projectName, id, typeDef, typeDict, motherClass, levelTypeNode);
+         return new StructBuilder(projectName, id, typeDef, typeDict, motherClass, levelTypeNode, nodeTypes);
       }
 
       public override TypeBuilderBase Create()
@@ -156,6 +230,10 @@ namespace Substrate.DotNet.Service.Node
          if (_levelTypeNode == LevelTypeNode.Child)
          {
             targetClass = targetClass.AddModifiers(SyntaxFactory.Token(SyntaxKind.SealedKeyword));
+         }
+         else
+         {
+            targetClass = targetClass.AddModifiers(SyntaxFactory.Token(SyntaxKind.AbstractKeyword));
          }
 
          targetClass = AddTargetClassCustomAttributesRoslyn(targetClass, typeDef);
@@ -190,8 +268,19 @@ namespace Substrate.DotNet.Service.Node
          MethodDeclarationSyntax encodeMethod = GetEncodeRoslyn(typeDef.TypeFields);
          targetClass = targetClass.AddMembers(encodeMethod);
 
-         MethodDeclarationSyntax decodeMethod = GetDecodeRoslyn(typeDef.TypeFields);
-         targetClass = targetClass.AddMembers(decodeMethod);
+         /**
+          * Decode method is not implemented in mother class (will be override in children classes)
+          * While mother class declare a new static "Create" method which will call children create method depends of SpecVersion
+          **/
+         if(!IsMotherClass())
+         {
+            MethodDeclarationSyntax decodeMethod = GetDecodeRoslyn(typeDef.TypeFields);
+            targetClass = targetClass.AddMembers(decodeMethod);
+         } else
+         {
+            MethodDeclarationSyntax createMethod = GetCreateByVersionRoslyn(typeDef);
+            targetClass = targetClass.AddMembers(createMethod);
+         }
 
          NamespaceDeclarationSyntax namespaceDeclaration = SyntaxFactory
             .NamespaceDeclaration(SyntaxFactory.IdentifierName(NamespaceName))
@@ -206,6 +295,11 @@ namespace Substrate.DotNet.Service.Node
          return this;
       }
 
+      private bool IsMotherClass()
+      {
+         return _levelTypeNode == LevelTypeNode.Mother;
+      }
+
       /// <summary>
       /// Manage property classes in mother class
       /// </summary>
@@ -214,7 +308,7 @@ namespace Substrate.DotNet.Service.Node
       /// <returns></returns>
       private PropertyDeclarationSyntax GetPropertyDeclaration(string fieldName, NodeTypeResolved fullItem)
       {
-         if (_levelTypeNode == LevelTypeNode.Mother)
+         if (IsMotherClass())
          {
             return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName(BuilderBase.GetMotherTypeDeclaration(fullItem)));
          }

@@ -36,6 +36,16 @@ namespace Substrate.DotNet.Client.Versions
          Mother,
          Child
       }
+
+      public uint ToNumberVersion()
+      {
+         uint version;
+         if(uint.TryParse(string.Join("", Version.Skip(1)), out version))
+         {
+            return version;
+         }
+         throw new InvalidOperationException("Error while parsing version from string to num");
+      }
    }
 
    public class NodeTypeRefinedChild : NodeTypeRefined

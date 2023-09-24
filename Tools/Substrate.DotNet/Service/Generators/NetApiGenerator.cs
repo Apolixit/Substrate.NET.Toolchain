@@ -54,9 +54,8 @@ namespace Substrate.DotNet.Service.Generators
 
          MapChildrenTypeToMotherType(refinedNodes, motherModules, mappingMother);
          BuildConsolidateResolver(refinedNodes, unifiedResolver);
-         //Dictionary<uint, ModuleVersion> motherModules = GenerateMothersModule(refinedNodes, blockVersions);
-         GenerateModulesMultiVersion(motherModules, refinedNodes, unifiedResolver, mappingMother);
 
+         GenerateModulesMultiVersion(motherModules, refinedNodes, unifiedResolver, mappingMother);
          GenerateTypesMultiVersion(refinedNodes, _projectSettings.ProjectDirectory, write: true);
       }
 
@@ -163,10 +162,10 @@ namespace Substrate.DotNet.Service.Generators
                return;
             }
 
-            var existing = (NodeTypeVariant)refinedNodes.First(x => x.Index == existingModule.Errors.TypeId).NodeResolved.NodeType;
-            var current = (NodeTypeVariant)refinedNodes.First(x => x.Index == currentModule.Errors.TypeId).NodeResolved.NodeType;
+            NodeTypeVariant existing = existingModule.Errors is not null ? (NodeTypeVariant)refinedNodes.First(x => x.Index == existingModule.Errors.TypeId).NodeResolved.NodeType : null;
+            NodeTypeVariant current = currentModule.Errors is not null ? (NodeTypeVariant)refinedNodes.First(x => x.Index == currentModule.Errors.TypeId).NodeResolved.NodeType : null;
 
-            if (existing.Variants is not null && current.Variants is not null)
+            if (existing?.Variants is not null && current?.Variants is not null)
             {
                existing.Variants = existing.Variants.AddIfNotExists(current.Variants, (x, y) => x.Any(e => e.Name == y.Name)).ToArray();
             }
@@ -193,10 +192,10 @@ namespace Substrate.DotNet.Service.Generators
                return;
             }
 
-            var existing = (NodeTypeVariant)refinedNodes.First(x => x.Index == existingModule.Calls.TypeId).NodeResolved.NodeType;
-            var current = (NodeTypeVariant)refinedNodes.First(x => x.Index == currentModule.Calls.TypeId).NodeResolved.NodeType;
+            NodeTypeVariant existing = existingModule.Calls is not null ?(NodeTypeVariant)refinedNodes.First(x => x.Index == existingModule.Calls.TypeId).NodeResolved.NodeType : null;
+            NodeTypeVariant current = currentModule.Calls is not null ? (NodeTypeVariant)refinedNodes.First(x => x.Index == currentModule.Calls.TypeId).NodeResolved.NodeType : null;
 
-            if (existing.Variants is not null && current.Variants is not null)
+            if (existing?.Variants is not null && current?.Variants is not null)
             {
                existing.Variants = existing.Variants.AddIfNotExists(current.Variants, (x, y) => x.Any(e => e.Name == y.Name)).ToArray();
             }
@@ -263,11 +262,11 @@ namespace Substrate.DotNet.Service.Generators
             var motherNodeTypeComposite = new NodeTypeComposite()
             {
                Id = motherNodeId,
-               TypeFields = new List<NodeTypeField>(childNodeTypeComposite.TypeFields?.ToList() ?? new List<NodeTypeField>()).ToArray(),
+               TypeFields = childNodeTypeComposite.TypeFields.Copy().ToArray(),
                Docs = childNodeTypeComposite.Docs,
                Path = motherPath,
                TypeDef = childNodeTypeComposite.TypeDef,
-               TypeParams = childNodeTypeComposite.TypeParams
+               TypeParams = childNodeTypeComposite.TypeParams.Copy().ToArray()
             };
 
             // Add the new class to the mother classes mapping
@@ -276,15 +275,12 @@ namespace Substrate.DotNet.Service.Generators
             foreach (NodeTypeRefined otherGroupedNodes in baseNode.Skip(1))
             {
                var otherChildrenTypeComposite = (NodeTypeComposite)otherGroupedNodes.NodeResolved.NodeType;
-               if (otherChildrenTypeComposite.TypeFields is null)
-               {
-                  Log.Debug($"Type composite {otherChildrenTypeComposite.Id} has TypeFields null");
-               }
-               else
+               if (otherChildrenTypeComposite.TypeFields is not null)
                {
                   otherChildrenTypeComposite.TypeFields.ToList().ForEach(p =>
                   {
-                     NodeTypeField existingField = motherNodeTypeComposite.TypeFields.FirstOrDefault(x => x.Name == p.Name);
+                     NodeTypeField existingField = TryFindExistingField(p, motherNodeTypeComposite);
+
                      if (existingField is null)
                      {
                         // If version changed, change mother type to BaseType
@@ -292,7 +288,7 @@ namespace Substrate.DotNet.Service.Generators
                      }
                      else if (existingField.Name is not null)
                      {
-                        ManageNewPropertyVersion(refinedNodes, p, motherNodeTypeComposite, existingField);
+                        ManageNewPropertyVersion(refinedNodes, motherNodeTypeComposite, p, existingField);
                      }
                   });
 
@@ -314,24 +310,64 @@ namespace Substrate.DotNet.Service.Generators
          return mappingMother;
       }
 
-      private static void ManageNewPropertyVersion(List<NodeTypeRefined> refinedNodes, NodeTypeField p, NodeTypeComposite motherNodeTypeComposite, NodeTypeField existingField)
+      private static NodeTypeField TryFindExistingField(NodeTypeField p, NodeTypeComposite motherNodeTypeComposite)
       {
-         NodeType n1 = refinedNodes.First(x => x.Index == existingField.TypeId).NodeResolved.NodeType;
-         NodeType n2 = refinedNodes.First(x => x.Index == p.TypeId).NodeResolved.NodeType;
-
-         if (IsTypeChanged(n1, n2) || (n1.Path is not null && n2.Path is not null))
+         NodeTypeField existingField = null;
+         string propNameToSearch = p.Name;
+         do
          {
-            string newPropName = RenamePropertyWithNewVersion(p.Name);
-            if (IsPathChanged(n1, n2) || IsTypeChanged(n1, n2))
+            NodeTypeField foundedField = motherNodeTypeComposite.TypeFields.FirstOrDefault(x => x.Name == propNameToSearch);
+            if (foundedField is not null)
             {
-               p.Name = newPropName;
-
-               if (!DoesExistInMotherProp(motherNodeTypeComposite, newPropName))
+               existingField = foundedField;
+               if(propNameToSearch is not null)
                {
-                  AddPropToMotherTypeField(p, motherNodeTypeComposite);
+                  propNameToSearch = RenamePropertyWithNewVersion(propNameToSearch);
                }
             }
+            else
+            {
+               propNameToSearch = null;
+            }
+         } while (propNameToSearch is not null);
+
+         return existingField;
+      }
+
+      private static void ManageNewPropertyVersion(
+         List<NodeTypeRefined> refinedNodes, 
+         NodeTypeComposite motherNodeTypeComposite,
+         NodeTypeField currentField,
+         NodeTypeField existingField)
+      {
+         NodeType existing = refinedNodes.First(x => x.Index == existingField.TypeId).NodeResolved.NodeType;
+         NodeType current = refinedNodes.First(x => x.Index == currentField.TypeId).NodeResolved.NodeType;
+
+         if(IsTypeChanged(existing, current) || IsPathChanged(existing, current))
+         {
+            currentField.Name = RenamePropertyWithNewVersion(existingField.Name);
+
+            if (!DoesExistInMotherProp(motherNodeTypeComposite, currentField.Name))
+            {
+               AddPropToMotherTypeField(currentField, motherNodeTypeComposite);
+            }
+         } else
+         {
+            currentField.Name = existingField.Name;
          }
+         //if (IsTypeChanged(existing, current) || (existing.Path is not null && current.Path is not null))
+         //{
+         //   string newPropName = RenamePropertyWithNewVersion(currentField.Name);
+         //   if (IsPathChanged(existing, current) || IsTypeChanged(existing, current))
+         //   {
+         //      currentField.Name = newPropName;
+
+         //      if (!DoesExistInMotherProp(motherNodeTypeComposite, newPropName))
+         //      {
+         //         AddPropToMotherTypeField(currentField, motherNodeTypeComposite);
+         //      }
+         //   }
+         //}
 
          static bool IsPathChanged(NodeType n1, NodeType n2)
          {
@@ -357,8 +393,8 @@ namespace Substrate.DotNet.Service.Generators
       {
          if (char.IsNumber(propName[^1]))
          {
-            int num = propName[^1];
-            return propName.Take(propName.Length - 2).ToString() + (num + 1);
+            int num = Int32.Parse(propName[^1].ToString());
+            return string.Join(string.Empty, propName.Take(propName.Length - 1)) + (num + 1);
          }
          else
          {
@@ -374,7 +410,13 @@ namespace Substrate.DotNet.Service.Generators
       private static void AddPropToMotherTypeField(NodeTypeField p, NodeTypeComposite motherNodeTypeComposite)
       {
          var extensionProp = motherNodeTypeComposite.TypeFields.ToList();
-         extensionProp.Add(p);
+         extensionProp.Add(new NodeTypeField()
+         {
+            Name = p.Name,
+            Docs = p.Docs,
+            TypeId = p.TypeId,
+            TypeName = p.TypeName
+         });
          motherNodeTypeComposite.TypeFields = extensionProp.ToArray();
       }
 

@@ -1,6 +1,7 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Newtonsoft.Json.Linq;
 using Substrate.DotNet.Client.Versions;
 using Substrate.DotNet.Extensions;
 using Substrate.DotNet.Service.Node.Base;
@@ -10,6 +11,7 @@ using Substrate.ServiceLayer.Storage;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using static Substrate.DotNet.Service.Node.ModuleGenBuilder;
 
 namespace Substrate.DotNet.Service.Node
 {
@@ -106,14 +108,8 @@ namespace Substrate.DotNet.Service.Node
              .WithLeadingTrivia(GetCommentsRoslyn(new string[] { "Substrate client for the storage calls." }));
          targetClass = targetClass.AddMembers(clientField);
 
-         if (ModuleType == TypeModule.Aggregation)
-         {
-            PropertyDeclarationSyntax blockHashProperty = CreateBlockHashPropery();
-            targetClass = targetClass.AddMembers(blockHashProperty);
-
-            MethodDeclarationSyntax versionMethod = CreateVersionMethod();
-            targetClass = targetClass.AddMembers(versionMethod);
-         }
+         PropertyDeclarationSyntax blockHashProperty = CreateBlockHashPropery();
+         targetClass = targetClass.AddMembers(blockHashProperty);
 
          // Add parameters.
          constructor = constructor.AddParameterListParameters(
@@ -127,6 +123,37 @@ namespace Substrate.DotNet.Service.Node
                      SyntaxKind.SimpleAssignmentExpression,
                      SyntaxFactory.IdentifierName("_client"),
                      SyntaxFactory.IdentifierName("client"))));
+
+         if (ModuleType == TypeModule.Aggregation)
+         {
+            MethodDeclarationSyntax versionMethod = CreateVersionMethod();
+            targetClass = targetClass.AddMembers(versionMethod);
+
+            // For aggregation mode, we have ModuleStorage for every version in the constructor
+            foreach (ModuleVersion associatedVersion in AssociatedModulesVersion)
+            {
+               string nameFullStorageVersion = VersionnedModuleStorageName(associatedVersion.Version);
+               string nameVersionnedModule = VersionnedModuleName(associatedVersion.Version);
+
+               FieldDeclarationSyntax versionnedModuleField = SyntaxFactory.FieldDeclaration(
+                 SyntaxFactory.VariableDeclaration(
+                     SyntaxFactory.ParseTypeName(nameFullStorageVersion))
+                 .WithVariables(
+                     SyntaxFactory.SingletonSeparatedList(
+                         SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier(nameVersionnedModule)))))
+             .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword)))
+             .WithLeadingTrivia(GetCommentsRoslyn(new string[] { $"Storage for SpecVersion {associatedVersion.Version}" }));
+               targetClass = targetClass.AddMembers(versionnedModuleField);
+
+               constructor = constructor.AddBodyStatements(SyntaxFactory.ExpressionStatement(
+                  SyntaxFactory.AssignmentExpression(
+                     SyntaxKind.SimpleAssignmentExpression,
+                     SyntaxFactory.IdentifierName(nameVersionnedModule),
+                     SyntaxFactory.IdentifierName($"new {nameFullStorageVersion}(_client)")
+                  )
+               ));
+            }
+         }
 
          if (storage?.Entries != null)
          {
@@ -161,8 +188,8 @@ namespace Substrate.DotNet.Service.Node
                   methodInvoke = SyntaxFactory.ExpressionStatement(SyntaxFactory.InvocationExpression(SyntaxFactory.IdentifierName(parameterMethod.Identifier)));
 
                   // add storage key mapping in constructor
-                  constructor = constructor
-                     .AddBodyStatements(AddPropertyValuesRoslyn(GetStorageMapStringRoslyn("", returnValueStr.ToString(), storage.Prefix, entry.Name), "_client.StorageKeyDict"));
+                  //constructor = constructor
+                  //   .AddBodyStatements(AddPropertyValuesRoslyn(GetStorageMapStringRoslyn("", returnValueStr.ToString(), storage.Prefix, entry.Name), "_client.StorageKeyDict"));
                }
                else if (entry.StorageType == Storage.Type.Map)
                {
@@ -180,10 +207,6 @@ namespace Substrate.DotNet.Service.Node
                   storageMethod = SyntaxFactory
                      .MethodDeclaration(SyntaxFactory.ParseTypeName($"Task<{returnValueStr}>"), methodName);
 
-                  //parameterMethod = parameterMethod
-                  //   .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("key"))
-                  //   .WithType(SyntaxFactory.ParseTypeName(key.ToString())))
-                  //   .AddBodyStatements(SyntaxFactory.ReturnStatement(GetStorageStringRoslyn(storage.Prefix, entry.Name, entry.StorageType, hashers)));
                   parameterMethod = parameterMethod
                      .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("key"))
                      .WithType(SyntaxFactory.ParseTypeName(keyValueStr)));
@@ -199,7 +222,7 @@ namespace Substrate.DotNet.Service.Node
                      SyntaxFactory.InvocationExpression(SyntaxFactory.IdentifierName(parameterMethod.Identifier), argumentList));
 
                   // add storage key mapping in constructor
-                  constructor = constructor.AddBodyStatements(AddPropertyValuesRoslyn(GetStorageMapStringRoslyn(keyValueStr, returnValueStr.ToString(), storage.Prefix, entry.Name, hashers), "_client.StorageKeyDict"));
+                  //constructor = constructor.AddBodyStatements(AddPropertyValuesRoslyn(GetStorageMapStringRoslyn(keyValueStr, returnValueStr.ToString(), storage.Prefix, entry.Name, hashers), "_client.StorageKeyDict"));
                }
                else
                {
@@ -258,12 +281,27 @@ namespace Substrate.DotNet.Service.Node
          return typeNamespace;
       }
 
+      private string VersionnedModuleStorageName(uint version)
+      {
+         return $"{NamespaceName}.v{version}.{Module.Name}Storage";
+      }
+
+      private string VersionnedModuleConstanteName(uint version)
+      {
+         return $"{NamespaceName}.v{version}.{Module.Name}Constants";
+      }
+
+      private string VersionnedModuleName(uint version)
+      {
+         return $"_{Module.Name.ToLowerFirst()}StorageV{version}";
+      }
+
       #region Custom aggregation behavior
       private static PropertyDeclarationSyntax CreateBlockHashPropery()
       {
-         // SyntaxFactory.NullableType(SyntaxFactory.ParseTypeName("string")), "BlockHash")
+         // SyntaxFactory.NullableType(SyntaxFactory.ParseTypeName("string")), "blockHash")
          return SyntaxFactory.PropertyDeclaration(
-                        SyntaxFactory.ParseTypeName("string"), "BlockHash")
+                        SyntaxFactory.ParseTypeName("string"), "blockHash")
                         .WithModifiers(
                            SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
                         )
@@ -292,7 +330,7 @@ namespace Substrate.DotNet.Service.Node
                                 .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("token")).WithType(SyntaxFactory.ParseTypeName("CancellationToken")));
 
 
-         string resultString = "await _client.State.GetRuntimeVersionAtAsync(BlockHash, token)";
+         string resultString = "await _client.State.GetRuntimeVersionAtAsync(blockHash, token)";
 
          VariableDeclarationSyntax variableDeclaration = SyntaxFactory
             .VariableDeclaration(SyntaxFactory.IdentifierName("var"))
@@ -452,8 +490,6 @@ namespace Substrate.DotNet.Service.Node
             parameters.Add("token");
          }
 
-         //bool compatible = IsReturnTypeCompatible(entry, versions);
-
          foreach (ModuleVersion version in versions)
          {
             Entry childEntry = version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name);
@@ -465,10 +501,8 @@ namespace Substrate.DotNet.Service.Node
             // Check if we have to cast "key" param
             if (parameters.Any(x => x == keyParam))
             {
-               //NodeTypeResolved motherModuleType = GetFullItemPath(entry.TypeMap.Item2.Key);
                NodeTypeResolved childModuleType = GetFullItemPath(childEntry.TypeMap.Item2.Key);
 
-               //string castType = motherModuleType != childModuleType ? $"({childModuleType})" : string.Empty;
                string castType = $"({childModuleType})";
                parameters.Remove(keyParam);
 
@@ -478,7 +512,40 @@ namespace Substrate.DotNet.Service.Node
 
             string paramMethod = $"{entry.Name}{typeMethodName}({(parameters.Any() ? string.Join(",", parameters) : string.Empty)})";
 
-            string call = $"{(typeMethod == TypeMethod.Storage ? "await new " : string.Empty)}{NamespaceName}.v{version.Version}.{Module.Name}Storage{(typeMethod == TypeMethod.Storage ? "(_client)" : string.Empty)}.{paramMethod}";
+            string call;
+            switch (typeMethod)
+            {
+               case TypeMethod.Default:
+                  call = $"{NamespaceName}.v{version.Version}.{Module.Name}Storage.{paramMethod}";
+                  break;
+               case TypeMethod.Parameter:
+                  call = $"{NamespaceName}.v{version.Version}.{Module.Name}Storage.{paramMethod}";
+                  break;
+               default:
+                  call = $"await {VersionnedModuleName(version.Version)}.{paramMethod}";
+                  break;
+            }
+
+            ExpressionStatementSyntax paramAffectation = SyntaxFactory.ExpressionStatement(
+                                SyntaxFactory.AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    SyntaxFactory.IdentifierName("param"),
+                                    SyntaxFactory.IdentifierName(call)
+                                )
+                            );
+
+
+            ExpressionStatementSyntax blockHashAffectation = SyntaxFactory.ExpressionStatement(
+                                SyntaxFactory.AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    SyntaxFactory.MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        SyntaxFactory.IdentifierName(VersionnedModuleName(version.Version)),
+                                        SyntaxFactory.IdentifierName("blockHash")
+                                    ),
+                                    SyntaxFactory.IdentifierName("blockHash")
+                                )
+                            );
 
             statements.Add(SyntaxFactory.IfStatement(
                 SyntaxFactory.BinaryExpression(
@@ -486,13 +553,9 @@ namespace Substrate.DotNet.Service.Node
                     SyntaxFactory.IdentifierName("version"),
                     SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(version.Version))
                  ),
-                SyntaxFactory.ExpressionStatement(
-                    SyntaxFactory.AssignmentExpression(
-                        SyntaxKind.SimpleAssignmentExpression,
-                        SyntaxFactory.IdentifierName("param"),
-                        SyntaxFactory.IdentifierName(call)
-                    )
-                )
+                typeMethod == TypeMethod.Storage ?
+                  SyntaxFactory.Block(blockHashAffectation, paramAffectation) :
+                  paramAffectation
             ));
          }
 
@@ -529,53 +592,104 @@ namespace Substrate.DotNet.Service.Node
 
       private bool IsReturnTypeCompatible(Entry entry)
       {
-         if(entry.StorageType == Storage.Type.Plain)
+         if (entry.StorageType == Storage.Type.Plain)
          {
             return IsTypeCompatible(entry, (Entry childEntry) => childEntry.TypeMap.Item1);
-         } else if(entry.StorageType == Storage.Type.Map)
+         }
+         else if (entry.StorageType == Storage.Type.Map)
          {
             return IsTypeCompatible(entry, (Entry childEntry) => childEntry.TypeMap.Item2.Value);
          }
 
          throw new NotImplementedException();
       }
-         
+
 
       private bool IsKeyTypeCompatible(Entry entry)
          => IsTypeCompatible(entry, (Entry childEntry) => childEntry.TypeMap.Item2.Key);
 
       private bool IsTypeCompatible(Entry entry, Func<Entry, uint> typeCompare)
       {
-         if(AssociatedModulesVersion is null || !AssociatedModulesVersion.Any())
+         if (AssociatedModulesVersion is null || !AssociatedModulesVersion.Any())
          {
             return true;
          }
 
-         uint? valueReturn = null;
+         //uint? valueReturn = null;
+         (NetApi.Model.Types.Metadata.V14.TypeDefEnum?, uint?) initialValue = default;
          bool compatible = AssociatedModulesVersion
             .Where(version => version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name) is not null)
-            .Select(version => version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name))
+            .Select(version => (version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name)))
             .All(childEntry =>
             {
-               //if (childEntry.TypeMap.Item2 is null)
-               //{
-               //   return true;
-               //}
-
                NodeTypeResolved childModuleType = GetFullItemPath(typeCompare(childEntry));
-               uint value;
-               bool found = MappingMother.TryGetValue(childModuleType.NodeType.Id, out value);
-               if (!found)
+               return IsCommonType(ref initialValue, childModuleType);
+            });
+         return compatible;
+      }
+
+      private bool IsCommonType(ref (NetApi.Model.Types.Metadata.V14.TypeDefEnum? typeDef, uint? id) initialValue, NodeTypeResolved childModuleType)
+      {
+         if(childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.V14.TypeDefEnum.Composite)
+         {
+            uint id;
+            _ = MappingMother.TryGetValue(childModuleType.NodeType.Id, out id);
+
+            return Compare(ref initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum.Composite, id));
+         } else
+         {
+            return Compare(ref initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum.Composite, null));
+         }
+
+         //uint value;
+         //bool found = MappingMother.TryGetValue(childModuleType.NodeType.Id, out value);
+         //if (!found && valueReturn is null)
+         //{
+         //   return true;
+         //}
+         //else if (valueReturn == null)
+         //{
+         //   valueReturn = value;
+         //}
+
+         //return value == valueReturn;
+
+         bool Compare(ref (NetApi.Model.Types.Metadata.V14.TypeDefEnum? typeDef, uint? id) initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum typeDef, uint? id) currentValue)
+         {
+            if (initialValue.typeDef is null)
+            {
+               initialValue.typeDef = currentValue.typeDef;
+               initialValue.id = currentValue.id;
+               return true;
+            } else
+            {
+               return initialValue.typeDef.Value == currentValue.typeDef && initialValue.id == currentValue.id;
+            }
+         }
+      }
+
+      private bool IsConstanteTypeCompatible(string constantName)
+      {
+         if (AssociatedModulesVersion is null || !AssociatedModulesVersion.Any())
+         {
+            return true;
+         }
+
+         //uint? valueReturn = null;
+         (NetApi.Model.Types.Metadata.V14.TypeDefEnum?, uint?) initialValue = default;
+         bool compatible = AssociatedModulesVersion
+            .Where(version => version.Module.Constants is not null)
+            .Select(version => version.Module.Constants)
+            .All(childConstant =>
+            {
+               PalletConstant constFound = childConstant.SingleOrDefault(x => x.Name == constantName);
+               if(constFound is null)
                {
-                  valueReturn = uint.MaxValue;
-                  valueReturn = uint.MinValue;
-               }
-               else if (valueReturn == null)
-               {
-                  valueReturn = value;
+                  return true;
                }
 
-               return value == valueReturn;
+               NodeTypeResolved childModuleType = GetFullItemPath(constFound.TypeId);
+               return IsCommonType(ref initialValue, childModuleType);
             });
          return compatible;
       }
@@ -748,52 +862,148 @@ namespace Substrate.DotNet.Service.Node
                if (NodeTypes.TryGetValue(constant.TypeId, out NodeType nodeType))
                {
                   NodeTypeResolved nodeTypeResolved = GetFullItemPath(nodeType.Id);
-                  constantMethod = constantMethod.WithReturnType(SyntaxFactory.ParseTypeName(nodeTypeResolved.ToString()));
-
-                  // assign new result object
-                  constantMethod = constantMethod.AddBodyStatements(
-                      SyntaxFactory.LocalDeclarationStatement(
-                          SyntaxFactory.VariableDeclaration(
-                              SyntaxFactory.IdentifierName("var"),
-                              SyntaxFactory.SingletonSeparatedList(
-                                  SyntaxFactory.VariableDeclarator(
-                                      SyntaxFactory.Identifier("result"),
-                                      null,
-                                      SyntaxFactory.EqualsValueClause(
-                                          SyntaxFactory.ObjectCreationExpression(
-                                              SyntaxFactory.ParseTypeName(nodeTypeResolved.ToString()),
-                                              SyntaxFactory.ArgumentList(),
-                                              null)))))));
-
-                  // create with hex string object
-                  constantMethod = constantMethod.AddBodyStatements(
-                      SyntaxFactory.ExpressionStatement(
-                          SyntaxFactory.InvocationExpression(
-                              SyntaxFactory.MemberAccessExpression(
-                                  SyntaxKind.SimpleMemberAccessExpression,
-                                  SyntaxFactory.IdentifierName("result"),
-                                  SyntaxFactory.IdentifierName("Create")),
-                              SyntaxFactory.ArgumentList(
-                                  SyntaxFactory.SingletonSeparatedList(
-                                      SyntaxFactory.Argument(
-                                          SyntaxFactory.LiteralExpression(
-                                              SyntaxKind.StringLiteralExpression,
-                                              SyntaxFactory.Literal("0x" + BitConverter.ToString(constant.Value).Replace("-", string.Empty)))))))));
-
-                  // return statement
-                  constantMethod = constantMethod.AddBodyStatements(
-                      SyntaxFactory.ReturnStatement(
-                          SyntaxFactory.IdentifierName("result")));
+                  constantMethod = CreateConstantMethod(constantMethod, constant, nodeTypeResolved);
 
                   targetClass = targetClass.ReplaceNode(
-                      targetClass.DescendantNodes().OfType<MethodDeclarationSyntax>().Single(m => m.Identifier.Text == constant.Name),
-                      constantMethod);
+                   targetClass.DescendantNodes().OfType<MethodDeclarationSyntax>().Single(m => m.Identifier.Text == constant.Name),
+                   constantMethod);
                }
             }
          }
 
          namespaceDeclaration = namespaceDeclaration.AddMembers(targetClass);
          return namespaceDeclaration;
+      }
+
+      private MethodDeclarationSyntax CreateConstantMethod(MethodDeclarationSyntax constantMethod, PalletConstant constant, NodeTypeResolved nodeTypeResolved)
+      {
+         return ModuleType == TypeModule.Version ?
+                              CreateConstantVersionMethod(constantMethod, constant, nodeTypeResolved) :
+                              CreateConstantAggregationMethod(constantMethod, constant, nodeTypeResolved);
+      }
+
+      private static MethodDeclarationSyntax CreateConstantVersionMethod(MethodDeclarationSyntax constantMethod, PalletConstant constant, NodeTypeResolved nodeTypeResolved)
+      {
+         constantMethod = constantMethod.WithReturnType(SyntaxFactory.ParseTypeName(nodeTypeResolved.ToString()));
+
+         // assign new result object
+         constantMethod = constantMethod.AddBodyStatements(
+             SyntaxFactory.LocalDeclarationStatement(
+                 SyntaxFactory.VariableDeclaration(
+                     SyntaxFactory.IdentifierName("var"),
+                     SyntaxFactory.SingletonSeparatedList(
+                         SyntaxFactory.VariableDeclarator(
+                             SyntaxFactory.Identifier("result"),
+                             null,
+                             SyntaxFactory.EqualsValueClause(
+                                 SyntaxFactory.ObjectCreationExpression(
+                                     SyntaxFactory.ParseTypeName(nodeTypeResolved.ToString()),
+                                     SyntaxFactory.ArgumentList(),
+                                     null)))))));
+
+         // create with hex string object
+         constantMethod = constantMethod.AddBodyStatements(
+             SyntaxFactory.ExpressionStatement(
+                 SyntaxFactory.InvocationExpression(
+                     SyntaxFactory.MemberAccessExpression(
+                         SyntaxKind.SimpleMemberAccessExpression,
+                         SyntaxFactory.IdentifierName("result"),
+                         SyntaxFactory.IdentifierName("Create")),
+                     SyntaxFactory.ArgumentList(
+                         SyntaxFactory.SingletonSeparatedList(
+                             SyntaxFactory.Argument(
+                                 SyntaxFactory.LiteralExpression(
+                                     SyntaxKind.StringLiteralExpression,
+                                     SyntaxFactory.Literal("0x" + BitConverter.ToString(constant.Value).Replace("-", string.Empty)))))))));
+
+         // return statement
+         constantMethod = constantMethod.AddBodyStatements(
+             SyntaxFactory.ReturnStatement(
+                 SyntaxFactory.IdentifierName("result")));
+
+         return constantMethod;
+      }
+
+      private MethodDeclarationSyntax CreateConstantAggregationMethod(MethodDeclarationSyntax constantMethod, PalletConstant constant, NodeTypeResolved nodeTypeResolved)
+      {
+         bool isTypeCompatible = IsConstanteTypeCompatible(constant.Name);
+         string returnTypeStr = isTypeCompatible ? BuilderBase.GetMotherTypeDeclaration(GetFullItemPath(nodeTypeResolved.NodeType.Id)) : "IType";
+
+         constantMethod = constantMethod.WithReturnType(SyntaxFactory.ParseTypeName(returnTypeStr));
+
+         constantMethod = constantMethod.AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("version")).WithType(SyntaxFactory.ParseTypeName("uint")));
+
+         string variableName = "result";
+         var statements = new List<StatementSyntax>();
+
+         VariableDeclarationSyntax resultVariable =
+             SyntaxFactory.VariableDeclaration(
+                 SyntaxFactory.ParseTypeName(returnTypeStr))
+             .AddVariables(
+                 SyntaxFactory.VariableDeclarator(variableName)
+                 .WithInitializer(
+                     SyntaxFactory.EqualsValueClause(
+                         SyntaxFactory.LiteralExpression(
+                             SyntaxKind.NullLiteralExpression))));
+         statements.Add(SyntaxFactory.LocalDeclarationStatement(resultVariable));
+
+         foreach (ModuleVersion version in AssociatedModulesVersion)
+         {
+            PalletConstant? childConstant = version.Module.Constants?.SingleOrDefault(x => x.Name == constant.Name);
+            if(childConstant is null)
+            {
+               continue;
+            }
+            
+            string call = $"new {VersionnedModuleConstanteName(version.Version)}().{constant.Name}()";
+
+            ExpressionStatementSyntax paramAffectation = SyntaxFactory.ExpressionStatement(
+                                SyntaxFactory.AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    SyntaxFactory.IdentifierName(variableName),
+                                    SyntaxFactory.IdentifierName(call)
+                                )
+                            );
+
+            statements.Add(SyntaxFactory.IfStatement(
+                SyntaxFactory.BinaryExpression(
+                    SyntaxKind.EqualsExpression,
+                    SyntaxFactory.IdentifierName("version"),
+                    SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(version.Version))
+                 ),
+                paramAffectation
+            ));
+         }
+
+         IfStatementSyntax ifStatement = SyntaxFactory.IfStatement(
+             SyntaxFactory.BinaryExpression(
+                 SyntaxKind.EqualsExpression,
+                 SyntaxFactory.IdentifierName(variableName),
+                 SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression)
+             ),
+             SyntaxFactory.ThrowStatement(
+                 SyntaxFactory.ObjectCreationExpression(
+                     SyntaxFactory.QualifiedName(
+                         SyntaxFactory.ParseName("System"),
+                         SyntaxFactory.IdentifierName("InvalidOperationException")
+                     ), SyntaxFactory.ArgumentList(
+                 SyntaxFactory.SingletonSeparatedList(
+                     SyntaxFactory.Argument(
+                         SyntaxFactory.LiteralExpression(
+                             SyntaxKind.StringLiteralExpression,
+                             SyntaxFactory.Literal("Error while fetching data")
+                         )
+                     )
+                 )
+             ), null)
+             )
+         );
+
+         statements.Add(ifStatement);
+         statements.Add(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName(variableName)));
+         return constantMethod.WithBody(SyntaxFactory.Block(
+             statements
+         ));
       }
 
       private NamespaceDeclarationSyntax CreateErrors(NamespaceDeclarationSyntax namespaceDeclaration)
@@ -833,7 +1043,7 @@ namespace Substrate.DotNet.Service.Node
 
       private static string GetInvoceString(string returnType)
       {
-         return "await _client.GetStorageAsync<" + returnType + ">(parameters, token)";
+         return "await _client.GetStorageAsync<" + returnType + ">(parameters, blockHash, token)";
       }
 
       private static InvocationExpressionSyntax GetStorageStringRoslyn(string module, string item, Storage.Type type, Storage.Hasher[] hashers = null)

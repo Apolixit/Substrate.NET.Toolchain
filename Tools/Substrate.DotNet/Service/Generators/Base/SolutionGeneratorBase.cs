@@ -59,8 +59,6 @@ namespace Substrate.DotNet.Service.Generators.Base
 
       protected void GenerateTypesMultiVersion(List<NodeTypeRefined> nodeTypes, string basePath, bool write)
       {
-         // tmp
-         //nodeTypes = nodeTypes.Skip(1826).ToList();
          foreach (NodeTypeRefined kvp in nodeTypes)
          {
             NodeTypeResolved nodeTypeResolved = kvp.NodeResolved;
@@ -74,7 +72,7 @@ namespace Substrate.DotNet.Service.Generators.Base
                      var type = nodeType as NodeTypeComposite;
                      StructBuilder.Init(ProjectName, type.Id, type, resolver,
                         kvp is NodeTypeRefinedChild child && child.LinkedTo is not null ?
-                        child.LinkedTo.NodeResolved : null, kvp.LevelNode)
+                        child.LinkedTo.NodeResolved : null, kvp.LevelNode, nodeTypes)
                          .Create()
                          .Build(write: write, out bool success, basePath);
 
