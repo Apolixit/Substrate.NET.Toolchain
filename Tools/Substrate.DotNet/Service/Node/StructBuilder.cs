@@ -74,6 +74,61 @@ namespace Substrate.DotNet.Service.Node
          return prop;
       }
 
+      private MethodDeclarationSyntax GetTypeByVersionRoslyn(NodeTypeComposite typeDef)
+      {
+         IEnumerable<NodeTypeRefined> linkedToVersion = _nodeTypes.Where(x => x is NodeTypeRefinedChild child && child.LinkedTo is not null && child.LinkedTo.NodeResolved.NodeType.Id == typeDef.Id);
+
+         TypeSyntax motherTypeSyntax = SyntaxFactory.ParseTypeName(BuilderBase.GetMotherTypeDeclaration(GetFullItemPath(typeDef.Id)));
+
+         MethodDeclarationSyntax createMethod = SyntaxFactory.MethodDeclaration(SyntaxFactory.ParseTypeName($"System.Type"), "TypeByVersion")
+             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+             .AddModifiers(SyntaxFactory.Token(SyntaxKind.StaticKeyword))
+             .AddParameterListParameters(
+                 SyntaxFactory.Parameter(SyntaxFactory.Identifier("version")).WithType(SyntaxFactory.ParseTypeName("uint")));
+
+         var statements = new List<StatementSyntax>();
+
+         foreach (NodeTypeRefined nodeTypeRefined in linkedToVersion)
+         {
+
+            string item = GetFullItemPath(nodeTypeRefined.NodeResolved.NodeType.Id).ToString();
+            ReturnStatementSyntax returnType = SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName($"typeof({item})"));
+
+            statements.Add(SyntaxFactory.IfStatement(
+                   SyntaxFactory.BinaryExpression(
+                       SyntaxKind.EqualsExpression,
+            SyntaxFactory.IdentifierName("version"),
+                       SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(nodeTypeRefined.ToNumberVersion()))
+                    ),
+                   SyntaxFactory.Block(
+                      returnType
+                  )
+               ));
+         }
+
+         ThrowStatementSyntax throwStatement = SyntaxFactory.ThrowStatement(
+                 SyntaxFactory.ObjectCreationExpression(
+                     SyntaxFactory.QualifiedName(
+                         SyntaxFactory.ParseName("System"),
+                         SyntaxFactory.IdentifierName("InvalidOperationException")
+                     ), SyntaxFactory.ArgumentList(
+                 SyntaxFactory.SingletonSeparatedList(
+                     SyntaxFactory.Argument(
+                         SyntaxFactory.LiteralExpression(
+                             SyntaxKind.StringLiteralExpression,
+                             SyntaxFactory.Literal("Error while fetching type by version")
+                         )
+                     )
+                 )
+             ), null));
+
+         statements.Add(throwStatement);
+
+         createMethod = createMethod.WithBody(SyntaxFactory.Block(statements));
+
+         return createMethod;
+      }
+
       private MethodDeclarationSyntax GetCreateByVersionRoslyn(NodeTypeComposite typeDef)
       {
          IEnumerable<NodeTypeRefined> linkedToVersion = _nodeTypes.Where(x => x is NodeTypeRefinedChild child && child.LinkedTo is not null && child.LinkedTo.NodeResolved.NodeType.Id == typeDef.Id);
@@ -278,6 +333,9 @@ namespace Substrate.DotNet.Service.Node
             targetClass = targetClass.AddMembers(decodeMethod);
          } else
          {
+            MethodDeclarationSyntax typeMethod = GetTypeByVersionRoslyn(typeDef);
+            targetClass = targetClass.AddMembers(typeMethod);
+
             MethodDeclarationSyntax createMethod = GetCreateByVersionRoslyn(typeDef);
             targetClass = targetClass.AddMembers(createMethod);
          }

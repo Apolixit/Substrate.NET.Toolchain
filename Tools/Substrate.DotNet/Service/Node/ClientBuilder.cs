@@ -32,7 +32,7 @@ namespace Substrate.DotNet.Service.Node
          );
 
          ClassDeclarationSyntax targetClass = SyntaxFactory.ClassDeclaration(ClassName)
-             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.SealedKeyword))
+             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
              .WithBaseList(
                  SyntaxFactory.BaseList().AddTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("Substrate.NetApi.SubstrateClient")))
              );

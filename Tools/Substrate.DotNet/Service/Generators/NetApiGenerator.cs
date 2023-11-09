@@ -37,6 +37,7 @@ namespace Substrate.DotNet.Service.Generators
       {
          var resolvers = new List<NodeTypeResolver>();
 
+         // Build, merge all versions resolvers in a unique one
          uint lastIndex = BuildVersionsResolvers(blockVersions, resolvers);
 
          var refinedNodes = resolvers

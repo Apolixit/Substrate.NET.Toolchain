@@ -230,28 +230,7 @@ namespace Substrate.DotNet.Service.Node
                }
 
                storageMethod = CreateStorageMethod(storageMethod, entry, methodInvoke, returnValueStr);
-               //storageMethod = storageMethod
-               //   .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.AsyncKeyword)))
-               //   .WithLeadingTrivia(GetCommentsRoslyn(entry.Docs, null, entry.Name)); // Assuming GetComments() returns a string
-
-               //storageMethod = storageMethod
-               //   .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("token")).WithType(SyntaxFactory.ParseTypeName("CancellationToken")));
-
-               //VariableDeclarationSyntax variableDeclaration1 = SyntaxFactory.VariableDeclaration(SyntaxFactory.ParseTypeName("string"))
-               //    .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("parameters"), null, SyntaxFactory.EqualsValueClause(methodInvoke.Expression)));
-
-               //storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.LocalDeclarationStatement(variableDeclaration1));
-
-               //string resultString = GetInvoceString(returnValueStr.ToString());
-
-               //VariableDeclarationSyntax variableDeclaration2 = SyntaxFactory
-               //   .VariableDeclaration(SyntaxFactory.IdentifierName("var"))
-               //   .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("result"), null, SyntaxFactory.EqualsValueClause(SyntaxFactory.IdentifierName(resultString))));
-
-               //storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.LocalDeclarationStatement(variableDeclaration2));
-
-               //storageMethod = storageMethod.AddBodyStatements(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("result")));
-
+               
                // add parameter method to the class
                targetClass = targetClass.AddMembers(parameterMethod);
 
@@ -269,6 +248,15 @@ namespace Substrate.DotNet.Service.Node
 
                // add storage method to the class
                targetClass = targetClass.AddMembers(storageMethod);
+               
+               // Add a InputType method if we are a module aggregation and have key input
+               // This is use to return the conrete key type regards of the version
+               if(ModuleType == TypeModule.Aggregation && entry.StorageType == Storage.Type.Map)
+               {
+                  MethodDeclarationSyntax typeMethod = SyntaxFactory.MethodDeclaration(SyntaxFactory.ParseTypeName($"System.Type"), entry.Name + "InputType");
+                  typeMethod = CreateTypeMethod(typeMethod, entry);
+                  targetClass = targetClass.AddMembers(typeMethod);
+               }
             }
          }
 
@@ -363,10 +351,28 @@ namespace Substrate.DotNet.Service.Node
       private MethodDeclarationSyntax CreateDefaultAggregationMethod(MethodDeclarationSyntax defaultMethod, Entry entry)
       {
          return defaultMethod.AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("version")).WithType(SyntaxFactory.ParseTypeName("uint")))
-            .WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, "string", TypeMethod.Default));
+            .WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, TypeMethod.Default));
       }
       #endregion
 
+      #region TypeByVersion method
+      private MethodDeclarationSyntax CreateTypeMethod(MethodDeclarationSyntax typeMethod, Entry entry)
+      {
+         typeMethod = typeMethod
+                  .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword)));
+
+         typeMethod = typeMethod
+            .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("version")).WithType(SyntaxFactory.ParseTypeName("uint")));
+
+         return typeMethod.WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, TypeMethod.InputType));
+      }
+
+      private MethodDeclarationSyntax CreateTypeAggregationMethod(MethodDeclarationSyntax storageMethod, Entry entry)
+      {
+         return storageMethod.WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, TypeMethod.Storage));
+         //return storageMethod.WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, returnValueStr, TypeMethod.Storage));
+      }
+      #endregion
       #region Storage method
       private MethodDeclarationSyntax CreateStorageMethod(MethodDeclarationSyntax storageMethod, Entry entry, ExpressionStatementSyntax methodInvoke, string returnValue)
       {
@@ -379,7 +385,7 @@ namespace Substrate.DotNet.Service.Node
 
          return ModuleType == TypeModule.Version ?
             CreateStorageVersionMethod(storageMethod, methodInvoke, returnValue.ToString()) :
-            CreateStorageAggregationMethod(storageMethod, entry, returnValue.ToString());
+            CreateStorageAggregationMethod(storageMethod, entry);
       }
 
       private MethodDeclarationSyntax CreateStorageVersionMethod(MethodDeclarationSyntax storageMethod, ExpressionStatementSyntax methodInvoke, string returnValueStr)
@@ -402,9 +408,9 @@ namespace Substrate.DotNet.Service.Node
          return storageMethod;
       }
 
-      private MethodDeclarationSyntax CreateStorageAggregationMethod(MethodDeclarationSyntax storageMethod, Entry entry, string returnValueStr)
+      private MethodDeclarationSyntax CreateStorageAggregationMethod(MethodDeclarationSyntax storageMethod, Entry entry)
       {
-         return storageMethod.WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, returnValueStr, TypeMethod.Storage));
+         return storageMethod.WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, TypeMethod.Storage));
       }
       #endregion
 
@@ -428,7 +434,8 @@ namespace Substrate.DotNet.Service.Node
       {
          return parameterMethod.AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("version")).WithType(SyntaxFactory.ParseTypeName("uint")))
             .WithBody(
-                     GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, "string", TypeMethod.Parameter));
+                     GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, TypeMethod.Parameter));
+                     //GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, "string", TypeMethod.Parameter));
       }
       #endregion
 
@@ -436,13 +443,13 @@ namespace Substrate.DotNet.Service.Node
       {
          Default,
          Parameter,
-         Storage
+         Storage,
+         InputType
       }
 
       private BlockSyntax GetStorageStringRoslynAggregation(
             Entry entry,
             IEnumerable<ModuleVersion> versions,
-            string returnTypeStr,
             TypeMethod typeMethod)
       {
          var statements = new List<StatementSyntax>();
@@ -457,18 +464,6 @@ namespace Substrate.DotNet.Service.Node
             statements.Add(SyntaxFactory.LocalDeclarationStatement(versionDeclaration));
          }
 
-         // SyntaxFactory.NullableType(SyntaxFactory.ParseTypeName(returnTypeStr)))
-         VariableDeclarationSyntax paramResultVariable =
-             SyntaxFactory.VariableDeclaration(
-                 SyntaxFactory.ParseTypeName(returnTypeStr))
-             .AddVariables(
-                 SyntaxFactory.VariableDeclarator("param")
-                 .WithInitializer(
-                     SyntaxFactory.EqualsValueClause(
-                         SyntaxFactory.LiteralExpression(
-                             SyntaxKind.NullLiteralExpression))));
-         statements.Add(SyntaxFactory.LocalDeclarationStatement(paramResultVariable));
-
          string typeMethodName = string.Empty;
          if (typeMethod == TypeMethod.Parameter)
          {
@@ -477,11 +472,14 @@ namespace Substrate.DotNet.Service.Node
          else if (typeMethod == TypeMethod.Default)
          {
             typeMethodName = "Default";
+         } else if(typeMethod == TypeMethod.InputType)
+         {
+            typeMethodName = "Type";
          }
 
          var parameters = new List<string>();
          string keyParam = "key";
-         if (entry.StorageType == Storage.Type.Map && typeMethod != TypeMethod.Default)
+         if (entry.StorageType == Storage.Type.Map && typeMethod != TypeMethod.Default && typeMethod != TypeMethod.InputType)
          {
             parameters.Add(keyParam);
          }
@@ -518,6 +516,9 @@ namespace Substrate.DotNet.Service.Node
                case TypeMethod.Default:
                   call = $"{NamespaceName}.v{version.Version}.{Module.Name}Storage.{paramMethod}";
                   break;
+               case TypeMethod.InputType:
+                  call = $"typeof({GetFullItemPath(childEntry.TypeMap.Item2.Key)})";
+                  break;
                case TypeMethod.Parameter:
                   call = $"{NamespaceName}.v{version.Version}.{Module.Name}Storage.{paramMethod}";
                   break;
@@ -526,13 +527,7 @@ namespace Substrate.DotNet.Service.Node
                   break;
             }
 
-            ExpressionStatementSyntax paramAffectation = SyntaxFactory.ExpressionStatement(
-                                SyntaxFactory.AssignmentExpression(
-                                    SyntaxKind.SimpleAssignmentExpression,
-                                    SyntaxFactory.IdentifierName("param"),
-                                    SyntaxFactory.IdentifierName(call)
-                                )
-                            );
+            ReturnStatementSyntax returnAffectation = SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName(call));
 
 
             ExpressionStatementSyntax blockHashAffectation = SyntaxFactory.ExpressionStatement(
@@ -554,18 +549,12 @@ namespace Substrate.DotNet.Service.Node
                     SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(version.Version))
                  ),
                 typeMethod == TypeMethod.Storage ?
-                  SyntaxFactory.Block(blockHashAffectation, paramAffectation) :
-                  paramAffectation
+                  SyntaxFactory.Block(blockHashAffectation, returnAffectation) :
+                  returnAffectation
             ));
          }
 
-         IfStatementSyntax ifStatement = SyntaxFactory.IfStatement(
-             SyntaxFactory.BinaryExpression(
-                 SyntaxKind.EqualsExpression,
-                 SyntaxFactory.IdentifierName("param"),
-                 SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression)
-             ),
-             SyntaxFactory.ThrowStatement(
+         ThrowStatementSyntax throwStatement = SyntaxFactory.ThrowStatement(
                  SyntaxFactory.ObjectCreationExpression(
                      SyntaxFactory.QualifiedName(
                          SyntaxFactory.ParseName("System"),
@@ -579,12 +568,9 @@ namespace Substrate.DotNet.Service.Node
                          )
                      )
                  )
-             ), null)
-             )
-         );
+             ), null));
 
-         statements.Add(ifStatement);
-         statements.Add(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("param")));
+         statements.Add(throwStatement);
          return SyntaxFactory.Block(
              statements
          );
@@ -616,7 +602,7 @@ namespace Substrate.DotNet.Service.Node
          }
 
          //uint? valueReturn = null;
-         (NetApi.Model.Types.Metadata.V14.TypeDefEnum?, uint?) initialValue = default;
+         (NetApi.Model.Types.Metadata.V14.TypeDefEnum?, string?) initialValue = default;
          bool compatible = AssociatedModulesVersion
             .Where(version => version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name) is not null)
             .Select(version => (version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name)))
@@ -628,17 +614,20 @@ namespace Substrate.DotNet.Service.Node
          return compatible;
       }
 
-      private bool IsCommonType(ref (NetApi.Model.Types.Metadata.V14.TypeDefEnum? typeDef, uint? id) initialValue, NodeTypeResolved childModuleType)
+      private bool IsCommonType(ref (NetApi.Model.Types.Metadata.V14.TypeDefEnum? typeDef, string? id) initialValue, NodeTypeResolved childModuleType)
       {
          if(childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.V14.TypeDefEnum.Composite)
          {
             uint id;
             _ = MappingMother.TryGetValue(childModuleType.NodeType.Id, out id);
 
-            return Compare(ref initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum.Composite, id));
+            return Compare(ref initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum.Composite, id.ToString()));
+         } else if(childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.V14.TypeDefEnum.Primitive)
+         {
+            return Compare(ref initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum.Primitive, childModuleType.ClassName));
          } else
          {
-            return Compare(ref initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum.Composite, null));
+            return Compare(ref initialValue, (childModuleType.NodeType.TypeDef, null));
          }
 
          //uint value;
@@ -654,7 +643,7 @@ namespace Substrate.DotNet.Service.Node
 
          //return value == valueReturn;
 
-         bool Compare(ref (NetApi.Model.Types.Metadata.V14.TypeDefEnum? typeDef, uint? id) initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum typeDef, uint? id) currentValue)
+         bool Compare(ref (NetApi.Model.Types.Metadata.V14.TypeDefEnum? typeDef, string? id) initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum typeDef, string? id) currentValue)
          {
             if (initialValue.typeDef is null)
             {
@@ -676,7 +665,7 @@ namespace Substrate.DotNet.Service.Node
          }
 
          //uint? valueReturn = null;
-         (NetApi.Model.Types.Metadata.V14.TypeDefEnum?, uint?) initialValue = default;
+         (NetApi.Model.Types.Metadata.V14.TypeDefEnum?, string?) initialValue = default;
          bool compatible = AssociatedModulesVersion
             .Where(version => version.Module.Constants is not null)
             .Select(version => version.Module.Constants)
