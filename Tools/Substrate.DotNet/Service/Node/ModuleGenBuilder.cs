@@ -318,7 +318,7 @@ namespace Substrate.DotNet.Service.Node
                                 .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("token")).WithType(SyntaxFactory.ParseTypeName("CancellationToken")));
 
 
-         string resultString = "await _client.State.GetRuntimeVersionAtAsync(blockHash, token)";
+         string resultString = "await _client.State.GetRuntimeVersionAsync(blockHash, token)";
 
          VariableDeclarationSyntax variableDeclaration = SyntaxFactory
             .VariableDeclaration(SyntaxFactory.IdentifierName("var"))
@@ -564,7 +564,7 @@ namespace Substrate.DotNet.Service.Node
                      SyntaxFactory.Argument(
                          SyntaxFactory.LiteralExpression(
                              SyntaxKind.StringLiteralExpression,
-                             SyntaxFactory.Literal("Error while fetching data")
+                             SyntaxFactory.Literal("Error while fetching data. The version is not supported, please check that a new version has not been release")
                          )
                      )
                  )
@@ -980,7 +980,7 @@ namespace Substrate.DotNet.Service.Node
                      SyntaxFactory.Argument(
                          SyntaxFactory.LiteralExpression(
                              SyntaxKind.StringLiteralExpression,
-                             SyntaxFactory.Literal("Error while fetching data")
+                             SyntaxFactory.Literal("Error while fetching data. The version is not supported, please check that a new version has not been release")
                          )
                      )
                  )

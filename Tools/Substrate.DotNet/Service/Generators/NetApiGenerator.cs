@@ -212,7 +212,7 @@ namespace Substrate.DotNet.Service.Generators
 
             if (existingModule.Storage is null && currentModule.Storage is not null)
             {
-               existingModule.Storage.Entries = currentModule.Storage.Entries;
+               existingModule.Storage = currentModule.Storage;
                return;
             }
 

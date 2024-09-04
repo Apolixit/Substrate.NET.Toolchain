@@ -17,6 +17,7 @@ using Substrate.NetApi.Model.Rpc;
 using System.Collections;
 using Microsoft.CodeAnalysis;
 using Substrate.DotNet.Client.Versions;
+using Substrate.DotNet.Extensions;
 
 namespace Substrate.DotNet
 {
@@ -31,6 +32,8 @@ namespace Substrate.DotNet
       /// </summary>
       static async Task Main(string[] args)
       {
+         args = new string[1];
+         args[0] = "upgrade";
          // Initialize logging.
          Log.Logger = new LoggerConfiguration()
           .MinimumLevel.Verbose()
@@ -41,7 +44,6 @@ namespace Substrate.DotNet
          {
             for (int i = 0; i < args.Length; i++)
             {
-               args[i] = "upgrade";
                switch (args[i])
                {
                   // Handles dotnet substrate update

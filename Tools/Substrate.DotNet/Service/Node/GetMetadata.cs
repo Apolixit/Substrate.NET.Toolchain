@@ -103,7 +103,7 @@ namespace Substrate.DotNet.Service.Node
             else
             {
                Hash blockHash = await client.Chain.GetBlockHashAsync(new BlockNumber(blockId.Value), cancellationToken);
-               version = await client.State.GetRuntimeVersionAtAsync(blockHash.Value, cancellationToken);
+               version = await client.State.GetRuntimeVersionAsync(blockHash.Value, cancellationToken);
             }
             
             if(version is not null)
@@ -134,7 +134,7 @@ namespace Substrate.DotNet.Service.Node
             } else
             {
                Hash blockHash = await client.Chain.GetBlockHashAsync(new BlockNumber(blockId.Value), cancellationToken);
-               return await client.State.GetMetaDataAtAsync(blockHash.Value, cancellationToken);
+               return await client.State.GetMetaDataAsync(blockHash.Value, cancellationToken);
             }
          }
          catch (Exception ex)
