@@ -9,7 +9,7 @@ using Microsoft.CodeAnalysis;
 using System.Linq;
 using System.CodeDom;
 using Substrate.ServiceLayer.Extensions;
-using Substrate.NetApi.Model.Types.Metadata.V14;
+using Substrate.NetApi.Model.Types.Metadata.Base;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Substrate.DotNet.Extensions;
 using System.Reflection;
@@ -213,6 +213,11 @@ namespace Substrate.DotNet.Service.Generators
             if (existingModule.Storage is null && currentModule.Storage is not null)
             {
                existingModule.Storage = currentModule.Storage;
+               return;
+            }
+
+            if(existingModule.Storage is not null && currentModule.Storage is null)
+            {
                return;
             }
 

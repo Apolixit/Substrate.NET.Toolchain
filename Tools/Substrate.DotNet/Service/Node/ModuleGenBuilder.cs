@@ -602,7 +602,7 @@ namespace Substrate.DotNet.Service.Node
          }
 
          //uint? valueReturn = null;
-         (NetApi.Model.Types.Metadata.V14.TypeDefEnum?, string?) initialValue = default;
+         (NetApi.Model.Types.Metadata.Base.TypeDefEnum?, string?) initialValue = default;
          bool compatible = AssociatedModulesVersion
             .Where(version => version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name) is not null)
             .Select(version => (version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name)))
@@ -614,17 +614,17 @@ namespace Substrate.DotNet.Service.Node
          return compatible;
       }
 
-      private bool IsCommonType(ref (NetApi.Model.Types.Metadata.V14.TypeDefEnum? typeDef, string? id) initialValue, NodeTypeResolved childModuleType)
+      private bool IsCommonType(ref (NetApi.Model.Types.Metadata.Base.TypeDefEnum? typeDef, string? id) initialValue, NodeTypeResolved childModuleType)
       {
-         if(childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.V14.TypeDefEnum.Composite)
+         if(childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.Base.TypeDefEnum.Composite)
          {
             uint id;
             _ = MappingMother.TryGetValue(childModuleType.NodeType.Id, out id);
 
-            return Compare(ref initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum.Composite, id.ToString()));
-         } else if(childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.V14.TypeDefEnum.Primitive)
+            return Compare(ref initialValue, (NetApi.Model.Types.Metadata.Base.TypeDefEnum.Composite, id.ToString()));
+         } else if(childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.Base.TypeDefEnum.Primitive)
          {
-            return Compare(ref initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum.Primitive, childModuleType.ClassName));
+            return Compare(ref initialValue, (NetApi.Model.Types.Metadata.Base.TypeDefEnum.Primitive, childModuleType.ClassName));
          } else
          {
             return Compare(ref initialValue, (childModuleType.NodeType.TypeDef, null));
@@ -643,7 +643,7 @@ namespace Substrate.DotNet.Service.Node
 
          //return value == valueReturn;
 
-         bool Compare(ref (NetApi.Model.Types.Metadata.V14.TypeDefEnum? typeDef, string? id) initialValue, (NetApi.Model.Types.Metadata.V14.TypeDefEnum typeDef, string? id) currentValue)
+         bool Compare(ref (NetApi.Model.Types.Metadata.Base.TypeDefEnum? typeDef, string? id) initialValue, (NetApi.Model.Types.Metadata.Base.TypeDefEnum typeDef, string? id) currentValue)
          {
             if (initialValue.typeDef is null)
             {
@@ -665,7 +665,7 @@ namespace Substrate.DotNet.Service.Node
          }
 
          //uint? valueReturn = null;
-         (NetApi.Model.Types.Metadata.V14.TypeDefEnum?, string?) initialValue = default;
+         (NetApi.Model.Types.Metadata.Base.TypeDefEnum?, string?) initialValue = default;
          bool compatible = AssociatedModulesVersion
             .Where(version => version.Module.Constants is not null)
             .Select(version => version.Module.Constants)

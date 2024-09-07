@@ -4,7 +4,7 @@ using Serilog;
 using Substrate.DotNet.Client.Versions;
 using Substrate.DotNet.Extensions;
 using Substrate.NetApi.Model.Meta;
-using Substrate.NetApi.Model.Types.Metadata.V14;
+using Substrate.NetApi.Model.Types.Metadata.Base;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -197,6 +197,10 @@ namespace Substrate.DotNet.Service.Node
 
       private NodeTypeName ResolveTypeName(uint typeId, Dictionary<uint, NodeType> types)
       {
+         if(!types.TryGetValue(typeId, out NodeType resolvedType))
+         {
+
+         }
          NodeType nodeType = types[typeId];
          switch (nodeType.TypeDef)
          {

@@ -1,7 +1,7 @@
 using Substrate.DotNet.Extensions;
 using Substrate.DotNet.Service.Node;
 using Substrate.NetApi.Model.Meta;
-using Substrate.NetApi.Model.Types.Metadata.V14;
+using Substrate.NetApi.Model.Types.Metadata.Base;
 using Substrate.NetApi.Model.Types.Primitive;
 using Serilog;
 using System;
@@ -516,7 +516,7 @@ namespace Substrate.DotNet.Service.Generators.Base
                      {
                         detailTuple.TypeIds[i] = wrapperNodes[detailTuple.TypeIds[i]];
                         anyUpdate = true;
-                     }
+                     } else { }
                   }
                   break;
 

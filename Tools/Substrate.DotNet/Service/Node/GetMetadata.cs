@@ -1,6 +1,9 @@
 ﻿#nullable enable
 
 using Serilog;
+using Substrate.NET.Metadata.Base;
+using Substrate.NET.Metadata.Service;
+using Substrate.NET.Metadata.V14;
 using Substrate.NetApi;
 using Substrate.NetApi.Model.Extrinsics;
 using Substrate.NetApi.Model.Meta;
@@ -72,9 +75,46 @@ namespace Substrate.DotNet.Service.Node
       {
          try
          {
-            var runtimeMetadata = new RuntimeMetadata();
-            runtimeMetadata.Create(serializedText);
-            return new MetaData(runtimeMetadata, string.Empty);
+            var metadataService = new MetadataService();
+            MetadataVersion version = metadataService.GetMetadataVersion(serializedText);
+
+            logger.Information("Found Metadata{version} => Conversion to V14", version);
+
+            MetadataV14? v14 = null;
+            switch(version)
+            {
+               case MetadataVersion.V9:
+                  var v9 = new NET.Metadata.V9.MetadataV9(serializedText);
+                  v14 = v9.ToMetadataV14();
+                  break;
+               case MetadataVersion.V10:
+                  var v10 = new NET.Metadata.V10.MetadataV10(serializedText);
+                  v14 = v10.ToMetadataV14();
+                  break;
+               case MetadataVersion.V11:
+                  var v11 = new NET.Metadata.V11.MetadataV11(serializedText);
+
+                  v14 = v11.ToMetadataV14();
+                  break;
+               case MetadataVersion.V12:
+                  var v12 = new NET.Metadata.V12.MetadataV12(serializedText);
+                  v14 = v12.ToMetadataV14();
+                  break;
+               case MetadataVersion.V13:
+                  var v13 = new NET.Metadata.V13.MetadataV13(serializedText);
+                  v14 = v13.ToMetadataV14();
+                  break;
+               case MetadataVersion.V14:
+                  v14 = new NET.Metadata.V14.MetadataV14(serializedText);
+                  break;
+               default:
+                  throw new InvalidOperationException($"Metadata version {version} is not supported!");
+            }
+
+            return v14.ToNetApiMetadata();
+            //var runtimeMetadata = new RuntimeMetadata();
+            //runtimeMetadata.Create(serializedText);
+            //return new MetaData(runtimeMetadata, string.Empty);
          }
          catch (Exception ex)
          {
@@ -108,6 +148,7 @@ namespace Substrate.DotNet.Service.Node
             
             if(version is not null)
             {
+               logger.Information("Version {version} successfully fetched...", version.SpecVersion);
                return version.SpecVersion;
             }   
          }

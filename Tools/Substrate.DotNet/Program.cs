@@ -33,7 +33,8 @@ namespace Substrate.DotNet
       static async Task Main(string[] args)
       {
          args = new string[1];
-         args[0] = "upgrade";
+         args[0] = "update";
+         //args[0] = "upgrade";
          // Initialize logging.
          Log.Logger = new LoggerConfiguration()
           .MinimumLevel.Verbose()
@@ -221,7 +222,7 @@ namespace Substrate.DotNet
          return true;
       }
 
-      private static MetaData? ManageMetadata(BlockVersion? blockVersion)
+      private static MetaData? ManageMetadata(BlockVersion blockVersion)
       {
          string metadataFilePath = (blockVersion is null) ? ResolveMetadataFilePath() : ResolveMetadataFilePath(blockVersion.SpecVersion);
          Log.Information("Using Metadata = {metadataFilePath}", metadataFilePath);
@@ -292,7 +293,8 @@ namespace Substrate.DotNet
             uint? version = await GetMetadata.GetBlockVersionFromNodeAsync(Log.Logger, websocket, blockId, token);
             if (version is null)
             {
-               throw new InvalidOperationException($"Could not query version from node {websocket} and block {blockId} !");
+               throw new
+                  InvalidOperationException($"Could not query version from node {websocket} and block {blockId} !");
             }
 
             uint? existingVersion = uniqueBlockVersion.FirstOrDefault(x => x.SpecVersion == version)?.BlockNumber;

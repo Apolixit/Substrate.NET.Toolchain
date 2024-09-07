@@ -73,7 +73,7 @@ namespace Substrate.DotNet.Service.Node.Base
       {
          switch (fullItem.NodeType.TypeDef)
          {
-            case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Variant:
+            case NetApi.Model.Types.Metadata.Base.TypeDefEnum.Variant:
                string namespacePath = NodeTypeResolver.GetVariantType(string.Join('.', fullItem.NodeType.Path)) switch
                {
                   "Option" => "Substrate.NetApi.Model.Types.IType",
@@ -84,16 +84,16 @@ namespace Substrate.DotNet.Service.Node.Base
                };
                return namespacePath;
 
-            case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Sequence:
-            case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Tuple:
+            case NetApi.Model.Types.Metadata.Base.TypeDefEnum.Sequence:
+            case NetApi.Model.Types.Metadata.Base.TypeDefEnum.Tuple:
                return "Substrate.NetApi.Model.Types.IType";
                //return "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseEnumerable";
 
-            case NetApi.Model.Types.Metadata.V14.TypeDefEnum.BitSequence:
+            case NetApi.Model.Types.Metadata.Base.TypeDefEnum.BitSequence:
                return "Substrate.NetApi.Model.Types.IType";
                //return "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseEnumerable";
 
-            case NetApi.Model.Types.Metadata.V14.TypeDefEnum.Compact:
+            case NetApi.Model.Types.Metadata.Base.TypeDefEnum.Compact:
                return "Substrate.NetApi.Model.Types.IType";
                //return "Substrate.NetApi.Model.Types.Base.Abstraction.IBaseCom";
 
@@ -152,7 +152,7 @@ namespace Substrate.DotNet.Service.Node.Base
       {
          // TODO (svnscha): Change version to given metadata version.
          TargetUnit = TargetUnit.AddUsings(
-                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Model.Types.Metadata.V14")),
+                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Model.Types.Metadata.Base")),
                 SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Attributes")));
 
          AttributeArgumentSyntax attributeArgument = SyntaxFactory.AttributeArgument(
