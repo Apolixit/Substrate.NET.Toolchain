@@ -487,7 +487,7 @@ namespace Substrate.DotNet.Service.Generators
             .Select(baseNode =>
             {
                string nodeNamespace = baseNode.NodeResolved.Name.BaseName.ToString();
-               versionsReplace.ForEach(y => nodeNamespace = nodeNamespace.Replace(y, "base"));
+               versionsReplace.ForEach(y => nodeNamespace = nodeNamespace.Replace($"v{y}.", "vbase."));
                return (baseNode, baseName: nodeNamespace);
             }).GroupBy(x => x.baseName)
             .Select(x => (x.Key, x.Select(y => y.baseNode)));
@@ -534,7 +534,8 @@ namespace Substrate.DotNet.Service.Generators
             // For every block version (except the first one), index are shifted to be unique
             if (lastIndex > 0)
             {
-               uint nbToAdd = Math.Max((uint)blockVersion.Metadata.NodeMetadata.Types.Values.Count, lastIndex + 1);
+               //uint nbToAdd = Math.Max((uint)blockVersion.Metadata.NodeMetadata.Types.Values.Count, lastIndex + 1);
+               uint nbToAdd = Math.Max(blockVersion.Metadata.NodeMetadata.Types.Values.Select(x => x.Id).Max(), lastIndex) + 1;
                IDictionary<uint, uint> mapping = blockVersion.Metadata.NodeMetadata.Types.Values.Select(t => (t.Id, t.Id + nbToAdd)).ToDictionary(x => x.Id, x => x.Item2);
 
                SolutionGeneratorBase.ShiftNodeIds(blockVersion.Metadata, mapping);

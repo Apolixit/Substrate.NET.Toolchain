@@ -153,6 +153,7 @@ namespace Substrate.DotNet.Service.Node.Base
          // TODO (svnscha): Change version to given metadata version.
          TargetUnit = TargetUnit.AddUsings(
                 SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Model.Types.Metadata.Base")),
+                SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Model.Types.Metadata.V14")),
                 SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("Substrate.NetApi.Attributes")));
 
          AttributeArgumentSyntax attributeArgument = SyntaxFactory.AttributeArgument(
