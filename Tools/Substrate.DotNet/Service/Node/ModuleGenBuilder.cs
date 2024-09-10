@@ -230,7 +230,7 @@ namespace Substrate.DotNet.Service.Node
                }
 
                storageMethod = CreateStorageMethod(storageMethod, entry, methodInvoke, returnValueStr);
-               
+
                // add parameter method to the class
                targetClass = targetClass.AddMembers(parameterMethod);
 
@@ -248,10 +248,10 @@ namespace Substrate.DotNet.Service.Node
 
                // add storage method to the class
                targetClass = targetClass.AddMembers(storageMethod);
-               
+
                // Add a InputType method if we are a module aggregation and have key input
                // This is use to return the conrete key type regards of the version
-               if(ModuleType == TypeModule.Aggregation && entry.StorageType == Storage.Type.Map)
+               if (ModuleType == TypeModule.Aggregation && entry.StorageType == Storage.Type.Map)
                {
                   MethodDeclarationSyntax typeMethod = SyntaxFactory.MethodDeclaration(SyntaxFactory.ParseTypeName($"System.Type"), entry.Name + "InputType");
                   typeMethod = CreateTypeMethod(typeMethod, entry);
@@ -435,7 +435,7 @@ namespace Substrate.DotNet.Service.Node
          return parameterMethod.AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("version")).WithType(SyntaxFactory.ParseTypeName("uint")))
             .WithBody(
                      GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, TypeMethod.Parameter));
-                     //GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, "string", TypeMethod.Parameter));
+         //GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, "string", TypeMethod.Parameter));
       }
       #endregion
 
@@ -472,7 +472,8 @@ namespace Substrate.DotNet.Service.Node
          else if (typeMethod == TypeMethod.Default)
          {
             typeMethodName = "Default";
-         } else if(typeMethod == TypeMethod.InputType)
+         }
+         else if (typeMethod == TypeMethod.InputType)
          {
             typeMethodName = "Type";
          }
@@ -490,90 +491,126 @@ namespace Substrate.DotNet.Service.Node
 
          foreach (ModuleVersion version in versions)
          {
-            Entry childEntry = version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name);
-            if (childEntry is null)
-            {
-               continue;
-            }
-
-            // Check if we have to cast "key" param
-            if (parameters.Any(x => x == keyParam))
-            {
-               NodeTypeResolved childModuleType = GetFullItemPath(childEntry.TypeMap.Item2.Key);
-
-               string castType = $"({childModuleType})";
-               parameters.Remove(keyParam);
-
-               keyParam = castType + "key";
-               parameters.Insert(0, keyParam);
-            }
-
-            string paramMethod = $"{entry.Name}{typeMethodName}({(parameters.Any() ? string.Join(",", parameters) : string.Empty)})";
-
-            string call;
-            switch (typeMethod)
-            {
-               case TypeMethod.Default:
-                  call = $"{NamespaceName}.v{version.Version}.{Module.Name}Storage.{paramMethod}";
-                  break;
-               case TypeMethod.InputType:
-                  call = $"typeof({GetFullItemPath(childEntry.TypeMap.Item2.Key)})";
-                  break;
-               case TypeMethod.Parameter:
-                  call = $"{NamespaceName}.v{version.Version}.{Module.Name}Storage.{paramMethod}";
-                  break;
-               default:
-                  call = $"await {VersionnedModuleName(version.Version)}.{paramMethod}";
-                  break;
-            }
-
-            ReturnStatementSyntax returnAffectation = SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName(call));
-
-
-            ExpressionStatementSyntax blockHashAffectation = SyntaxFactory.ExpressionStatement(
-                                SyntaxFactory.AssignmentExpression(
-                                    SyntaxKind.SimpleAssignmentExpression,
-                                    SyntaxFactory.MemberAccessExpression(
-                                        SyntaxKind.SimpleMemberAccessExpression,
-                                        SyntaxFactory.IdentifierName(VersionnedModuleName(version.Version)),
-                                        SyntaxFactory.IdentifierName("blockHash")
-                                    ),
-                                    SyntaxFactory.IdentifierName("blockHash")
-                                )
-                            );
-
-            statements.Add(SyntaxFactory.IfStatement(
-                SyntaxFactory.BinaryExpression(
-                    SyntaxKind.EqualsExpression,
-                    SyntaxFactory.IdentifierName("version"),
-                    SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(version.Version))
-                 ),
-                typeMethod == TypeMethod.Storage ?
-                  SyntaxFactory.Block(blockHashAffectation, returnAffectation) :
-                  returnAffectation
-            ));
+            BuildStorageVersion(entry, typeMethod, statements, typeMethodName, parameters, keyParam, version);
          }
 
-         ThrowStatementSyntax throwStatement = SyntaxFactory.ThrowStatement(
-                 SyntaxFactory.ObjectCreationExpression(
-                     SyntaxFactory.QualifiedName(
-                         SyntaxFactory.ParseName("System"),
-                         SyntaxFactory.IdentifierName("InvalidOperationException")
-                     ), SyntaxFactory.ArgumentList(
-                 SyntaxFactory.SingletonSeparatedList(
-                     SyntaxFactory.Argument(
-                         SyntaxFactory.LiteralExpression(
-                             SyntaxKind.StringLiteralExpression,
-                             SyntaxFactory.Literal("Error while fetching data. The version is not supported, please check that a new version has not been release")
-                         )
-                     )
-                 )
-             ), null));
+         ModuleVersion lastVersion = versions.Last();
+         BuildStorageVersion(entry, typeMethod, statements, typeMethodName, parameters, keyParam, lastVersion, false);
 
-         statements.Add(throwStatement);
+
+         // Romain 10/09/2024 => Remove this throw statement and keep return the last version.
+         // This is not really optimal but I want to avoid to throw an exception when a new version is released.
+
+         //ThrowStatementSyntax throwStatement = SyntaxFactory.ThrowStatement(
+         //        SyntaxFactory.ObjectCreationExpression(
+         //            SyntaxFactory.QualifiedName(
+         //                SyntaxFactory.ParseName("System"),
+         //                SyntaxFactory.IdentifierName("InvalidOperationException")
+         //            ), SyntaxFactory.ArgumentList(
+         //        SyntaxFactory.SingletonSeparatedList(
+         //            SyntaxFactory.Argument(
+         //                SyntaxFactory.LiteralExpression(
+         //                    SyntaxKind.StringLiteralExpression,
+         //                    SyntaxFactory.Literal("Error while fetching data. The version is not supported, please check that a new version has not been release")
+         //                )
+         //            )
+         //        )
+         //    ), null));
+
+         //statements.Add(throwStatement);
          return SyntaxFactory.Block(
              statements
          );
+      }
+
+      private void BuildStorageVersion(Entry entry, TypeMethod typeMethod, List<StatementSyntax> statements, string typeMethodName, List<string> parameters, string keyParam, ModuleVersion version, bool checkVersion = true)
+      {
+         Entry childEntry = version.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name);
+         if (childEntry is null)
+         {
+            return;
+         }
+
+         // Check if we have to cast "key" param
+         if (parameters.Any(x => x == keyParam))
+         {
+            NodeTypeResolved childModuleType = GetFullItemPath(childEntry.TypeMap.Item2.Key);
+
+            string castType = $"({childModuleType})";
+            parameters.Remove(keyParam);
+
+            keyParam = castType + "key";
+            parameters.Insert(0, keyParam);
+         }
+
+         string paramMethod = $"{entry.Name}{typeMethodName}({(parameters.Any() ? string.Join(",", parameters) : string.Empty)})";
+
+         string call;
+         switch (typeMethod)
+         {
+            case TypeMethod.Default:
+               call = $"{NamespaceName}.v{version.Version}.{Module.Name}Storage.{paramMethod}";
+               break;
+            case TypeMethod.InputType:
+               call = $"typeof({GetFullItemPath(childEntry.TypeMap.Item2.Key)})";
+               break;
+            case TypeMethod.Parameter:
+               call = $"{NamespaceName}.v{version.Version}.{Module.Name}Storage.{paramMethod}";
+               break;
+            default:
+               call = $"await {VersionnedModuleName(version.Version)}.{paramMethod}";
+               break;
+         }
+
+         ReturnStatementSyntax returnAffectation = SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName(call));
+
+
+         ExpressionStatementSyntax blockHashAffectation = SyntaxFactory.ExpressionStatement(
+                             SyntaxFactory.AssignmentExpression(
+                                 SyntaxKind.SimpleAssignmentExpression,
+                                 SyntaxFactory.MemberAccessExpression(
+                                     SyntaxKind.SimpleMemberAccessExpression,
+                                     SyntaxFactory.IdentifierName(VersionnedModuleName(version.Version)),
+                                     SyntaxFactory.IdentifierName("blockHash")
+                                 ),
+                                 SyntaxFactory.IdentifierName("blockHash")
+                             )
+                         );
+
+         if (checkVersion)
+         {
+            statements.Add(SyntaxFactory.IfStatement(
+             SyntaxFactory.BinaryExpression(
+                 SyntaxKind.EqualsExpression,
+                 SyntaxFactory.IdentifierName("version"),
+                 SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(version.Version))
+              ),
+             typeMethod == TypeMethod.Storage ?
+               SyntaxFactory.Block(blockHashAffectation, returnAffectation) :
+               returnAffectation
+            ));
+         }
+         else
+         {
+            AddLastVersionComment(statements);
+            if(typeMethod == TypeMethod.Storage)
+            {
+               statements.Add(blockHashAffectation);
+            }
+
+            statements.Add(returnAffectation);
+         }
+      }
+
+      private static void AddLastVersionComment(List<StatementSyntax> statements)
+      {
+         statements.Add(SyntaxFactory.ParseStatement("")
+                        .WithLeadingTrivia(SyntaxFactory.TriviaList(
+                     SyntaxFactory.LineFeed,
+                     SyntaxFactory.LineFeed,
+                     SyntaxFactory.Comment("// Return by default the last version."),
+                     SyntaxFactory.LineFeed,
+                     SyntaxFactory.Comment("If the caller need to know dynamically which is the last version handled, please call Substrate.NetApi.Ext LastVersionHandle() method."))));
       }
 
       private bool IsReturnTypeCompatible(Entry entry)
@@ -616,16 +653,18 @@ namespace Substrate.DotNet.Service.Node
 
       private bool IsCommonType(ref (NetApi.Model.Types.Metadata.Base.TypeDefEnum? typeDef, string? id) initialValue, NodeTypeResolved childModuleType)
       {
-         if(childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.Base.TypeDefEnum.Composite)
+         if (childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.Base.TypeDefEnum.Composite)
          {
             uint id;
             _ = MappingMother.TryGetValue(childModuleType.NodeType.Id, out id);
 
             return Compare(ref initialValue, (NetApi.Model.Types.Metadata.Base.TypeDefEnum.Composite, id.ToString()));
-         } else if(childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.Base.TypeDefEnum.Primitive)
+         }
+         else if (childModuleType.NodeType.TypeDef == NetApi.Model.Types.Metadata.Base.TypeDefEnum.Primitive)
          {
             return Compare(ref initialValue, (NetApi.Model.Types.Metadata.Base.TypeDefEnum.Primitive, childModuleType.ClassName));
-         } else
+         }
+         else
          {
             return Compare(ref initialValue, (childModuleType.NodeType.TypeDef, null));
          }
@@ -650,7 +689,8 @@ namespace Substrate.DotNet.Service.Node
                initialValue.typeDef = currentValue.typeDef;
                initialValue.id = currentValue.id;
                return true;
-            } else
+            }
+            else
             {
                return initialValue.typeDef.Value == currentValue.typeDef && initialValue.id == currentValue.id;
             }
@@ -672,7 +712,7 @@ namespace Substrate.DotNet.Service.Node
             .All(childConstant =>
             {
                PalletConstant constFound = childConstant.SingleOrDefault(x => x.Name == constantName);
-               if(constFound is null)
+               if (constFound is null)
                {
                   return true;
                }
@@ -938,61 +978,80 @@ namespace Substrate.DotNet.Service.Node
 
          foreach (ModuleVersion version in AssociatedModulesVersion)
          {
-            PalletConstant? childConstant = version.Module.Constants?.SingleOrDefault(x => x.Name == constant.Name);
-            if(childConstant is null)
-            {
-               continue;
-            }
-            
-            string call = $"new {VersionnedModuleConstanteName(version.Version)}().{constant.Name}()";
-
-            ExpressionStatementSyntax paramAffectation = SyntaxFactory.ExpressionStatement(
-                                SyntaxFactory.AssignmentExpression(
-                                    SyntaxKind.SimpleAssignmentExpression,
-                                    SyntaxFactory.IdentifierName(variableName),
-                                    SyntaxFactory.IdentifierName(call)
-                                )
-                            );
-
-            statements.Add(SyntaxFactory.IfStatement(
-                SyntaxFactory.BinaryExpression(
-                    SyntaxKind.EqualsExpression,
-                    SyntaxFactory.IdentifierName("version"),
-                    SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(version.Version))
-                 ),
-                paramAffectation
-            ));
+            BuildConstantVersion(constant, variableName, statements, version);
          }
 
-         IfStatementSyntax ifStatement = SyntaxFactory.IfStatement(
-             SyntaxFactory.BinaryExpression(
-                 SyntaxKind.EqualsExpression,
-                 SyntaxFactory.IdentifierName(variableName),
-                 SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression)
-             ),
-             SyntaxFactory.ThrowStatement(
-                 SyntaxFactory.ObjectCreationExpression(
-                     SyntaxFactory.QualifiedName(
-                         SyntaxFactory.ParseName("System"),
-                         SyntaxFactory.IdentifierName("InvalidOperationException")
-                     ), SyntaxFactory.ArgumentList(
-                 SyntaxFactory.SingletonSeparatedList(
-                     SyntaxFactory.Argument(
-                         SyntaxFactory.LiteralExpression(
-                             SyntaxKind.StringLiteralExpression,
-                             SyntaxFactory.Literal("Error while fetching data. The version is not supported, please check that a new version has not been release")
-                         )
-                     )
-                 )
-             ), null)
-             )
-         );
+         BuildConstantVersion(constant, variableName, statements, AssociatedModulesVersion.Last());
 
-         statements.Add(ifStatement);
+         // Romain 10/09/2024 => Remove this throw statement and keep return the last version.
+         // This is not really optimal but I want to avoid to throw an exception when a new version is released.
+
+         //IfStatementSyntax ifStatement = SyntaxFactory.IfStatement(
+         //    SyntaxFactory.BinaryExpression(
+         //        SyntaxKind.EqualsExpression,
+         //        SyntaxFactory.IdentifierName(variableName),
+         //        SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression)
+         //    ),
+         //    SyntaxFactory.ThrowStatement(
+         //        SyntaxFactory.ObjectCreationExpression(
+         //            SyntaxFactory.QualifiedName(
+         //                SyntaxFactory.ParseName("System"),
+         //                SyntaxFactory.IdentifierName("InvalidOperationException")
+         //            ), SyntaxFactory.ArgumentList(
+         //        SyntaxFactory.SingletonSeparatedList(
+         //            SyntaxFactory.Argument(
+         //                SyntaxFactory.LiteralExpression(
+         //                    SyntaxKind.StringLiteralExpression,
+         //                    SyntaxFactory.Literal("Error while fetching data. The version is not supported, please check that a new version has not been release")
+         //                )
+         //            )
+         //        )
+         //    ), null)
+         //    )
+         //);
+
+         //statements.Add(ifStatement);
          statements.Add(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName(variableName)));
          return constantMethod.WithBody(SyntaxFactory.Block(
              statements
          ));
+      }
+
+      private void BuildConstantVersion(PalletConstant constant, string variableName, List<StatementSyntax> statements, ModuleVersion version, bool checkVersion = true)
+      {
+         PalletConstant childConstant = version.Module.Constants?.SingleOrDefault(x => x.Name == constant.Name);
+         if (childConstant is null)
+         {
+            return;
+         }
+
+         string call = $"new {VersionnedModuleConstanteName(version.Version)}().{constant.Name}()";
+
+         ExpressionStatementSyntax paramAffectation = SyntaxFactory.ExpressionStatement(
+                             SyntaxFactory.AssignmentExpression(
+                                 SyntaxKind.SimpleAssignmentExpression,
+                                 SyntaxFactory.IdentifierName(variableName),
+                                 SyntaxFactory.IdentifierName(call)
+                             )
+                         );
+
+         if (checkVersion)
+         {
+            statements.Add(SyntaxFactory.IfStatement(
+             SyntaxFactory.BinaryExpression(
+                 SyntaxKind.EqualsExpression,
+                 SyntaxFactory.IdentifierName("version"),
+                 SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(version.Version))
+              ),
+             paramAffectation
+            ));
+         }
+         else
+         {
+            AddLastVersionComment(statements);
+            statements.Add(paramAffectation);
+         }
+
       }
 
       private NamespaceDeclarationSyntax CreateErrors(NamespaceDeclarationSyntax namespaceDeclaration)
