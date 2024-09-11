@@ -531,6 +531,7 @@ namespace Substrate.DotNet.Service.Node
             return;
          }
 
+         bool hasBeenCasted = false;
          // Check if we have to cast "key" param
          if (parameters.Any(x => x == keyParam))
          {
@@ -541,6 +542,8 @@ namespace Substrate.DotNet.Service.Node
 
             keyParam = castType + "key";
             parameters.Insert(0, keyParam);
+
+            hasBeenCasted = true;
          }
 
          string paramMethod = $"{entry.Name}{typeMethodName}({(parameters.Any() ? string.Join(",", parameters) : string.Empty)})";
@@ -599,6 +602,12 @@ namespace Substrate.DotNet.Service.Node
             }
 
             statements.Add(returnAffectation);
+         }
+
+         if(hasBeenCasted)
+         {
+            parameters.RemoveAt(0);
+            parameters.Insert(0, "key");
          }
       }
 
