@@ -610,7 +610,7 @@ namespace Substrate.DotNet.Service.Node
                      SyntaxFactory.LineFeed,
                      SyntaxFactory.Comment("// Return by default the last version."),
                      SyntaxFactory.LineFeed,
-                     SyntaxFactory.Comment("If the caller need to know dynamically which is the last version handled, please call Substrate.NetApi.Ext LastVersionHandle() method."))));
+                     SyntaxFactory.Comment("//If the caller need to know dynamically which is the last version handled, please call Substrate.NetApi.Ext LastVersionHandle() method."))));
       }
 
       private bool IsReturnTypeCompatible(Entry entry)

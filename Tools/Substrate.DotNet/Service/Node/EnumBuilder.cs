@@ -11,6 +11,9 @@ using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 using static Substrate.NetApi.Model.Meta.Storage;
 using Serilog;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
+using Substrate.NET.Metadata.Base;
+using Newtonsoft.Json.Linq;
 
 namespace Substrate.DotNet.Service.Node
 {
@@ -62,9 +65,10 @@ namespace Substrate.DotNet.Service.Node
                typeNamespace = typeNamespace.AddMembers(targetType);
          }
 
-
          ClassDeclarationSyntax targetClass = SyntaxFactory.ClassDeclaration(ClassName)
-             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.SealedKeyword));
+             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.SealedKeyword))
+             .AddBaseListTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("BaseEnumRust<Event>")));
+
          targetClass = targetClass.WithLeadingTrivia(GetCommentsRoslyn(typeDef.Docs, typeDef));
 
          if (typeDef.Variants == null || typeDef.Variants.All(p => p.TypeFields == null))
@@ -76,52 +80,106 @@ namespace Substrate.DotNet.Service.Node
          {
             var genericTypeArguments = new List<TypeSyntax> { SyntaxFactory.ParseTypeName(enumName) };
 
-            int highIndex = typeDef.Variants.Max(p => p.Index);
-            if (highIndex < 256)
+            ConstructorDeclarationSyntax constructor = SyntaxFactory.ConstructorDeclaration(ClassName)
+            .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword));
+
+            //constructor = constructor.WithBody(
+            //   SyntaxFactory.Block(CreateMethodInvocation("Substrate.NetApiExt.Generated.Model.frame_support.dispatch.DispatchInfo", "h", "ExtrinsicSuccess")));
+            //.WithBody(
+            //    SyntaxFactory.Block(
+            //        CreateMethodInvocation("Substrate.NetApiExt.Generated.Model.frame_support.dispatch.DispatchInfo", "ExtrinsicSuccess"),
+            //        CreateMethodInvocation("BaseTuple<Substrate.NetApiExt.Generated.Model.sp_runtime.EnumDispatchError, Substrate.NetApiExt.Generated.Model.frame_support.dispatch.DispatchInfo>", "ExtrinsicFailed"),
+            //        CreateMethodInvocation("BaseVoid", "CodeUpdated"),
+            //        CreateMethodInvocation("Substrate.NetApiExt.Generated.Model.sp_core.crypto.AccountId32", "NewAccount"),
+            //        CreateMethodInvocation("Substrate.NetApiExt.Generated.Model.sp_core.crypto.AccountId32", "KilledAccount"),
+            //        CreateMethodInvocation("BaseTuple<Substrate.NetApiExt.Generated.Model.sp_core.crypto.AccountId32, Substrate.NetApiExt.Generated.Model.primitive_types.H256>", "Remarked"),
+            //        CreateMethodInvocation("BaseTuple<Substrate.NetApiExt.Generated.Model.primitive_types.H256, Substrate.NetApi.Model.Types.Primitive.Bool>", "UpgradeAuthorized")
+            //    )
+            //);
+
+            foreach (TypeVariant variant in typeDef.Variants)
             {
-               for (int i = 0; i < highIndex + 1; i++)
+               string decoderType;
+               if (variant.TypeFields == null || variant.TypeFields.Length == 0)
                {
-                  TypeVariant variant = typeDef.Variants.FirstOrDefault(p => p.Index == i);
-
-                  if (variant == null || variant.TypeFields == null)
-                  {
-                     // add void type
-                     genericTypeArguments.Add(SyntaxFactory.ParseTypeName("BaseVoid"));
-                  }
-                  else
-                  {
-                     if (variant.TypeFields.Length == 1)
-                     {
-                        NodeTypeResolved item = GetFullItemPath(variant.TypeFields[0].TypeId);
-                        genericTypeArguments.Add(SyntaxFactory.ParseTypeName(item.ToString()));
-                     }
-                     else
-                     {
-                        var baseTupleArgs = new List<TypeSyntax>();
-                        foreach (NodeTypeField field in variant.TypeFields)
-                        {
-                           NodeTypeResolved item = GetFullItemPath(field.TypeId);
-                           baseTupleArgs.Add(SyntaxFactory.ParseTypeName(item.ToString()));
-                        }
-                        GenericNameSyntax baseTuple = SyntaxFactory.GenericName(SyntaxFactory.Identifier("BaseTuple"), SyntaxFactory.TypeArgumentList(SyntaxFactory.SeparatedList(baseTupleArgs)));
-                        genericTypeArguments.Add(baseTuple);
-                     }
-                  }
+                  decoderType = "BaseVoid";
                }
-            }
-            else
-            {
-               throw new NotImplementedException("Enum extension can't handle such big sized typed rust enumeration, please create a manual fix for it.");
+               else if (variant.TypeFields.Length == 1)
+               {
+                  NodeTypeResolved item = GetFullItemPath(variant.TypeFields[0].TypeId);
+                  decoderType = item.ToString();
+               }
+               else
+               {
+                  string tupleType = $"BaseTuple<{string.Join(", ", variant.TypeFields.Select(f => GetFullItemPath(f.TypeId)))}>";
+                  decoderType = tupleType;
+               }
+
+               constructor = constructor.WithBody(
+                  SyntaxFactory.Block(
+                     CreateMethodInvocation(decoderType, enumName, HandleReservedKeyword(variant.Name))
+                     )
+                  );
             }
 
-            GenericNameSyntax baseEnumExt = SyntaxFactory.GenericName(SyntaxFactory.Identifier("BaseEnumExt"), SyntaxFactory.TypeArgumentList(SyntaxFactory.SeparatedList(genericTypeArguments)));
-            targetClass = targetClass.AddBaseListTypes(SyntaxFactory.SimpleBaseType(baseEnumExt));
+            targetClass = targetClass.AddMembers(constructor);
+
+            //GenericNameSyntax baseEnumExt = SyntaxFactory.GenericName(SyntaxFactory.Identifier("BaseEnumRust"), SyntaxFactory.TypeArgumentList(SyntaxFactory.SeparatedList(genericTypeArguments)));
+            //targetClass = targetClass.AddBaseListTypes(SyntaxFactory.SimpleBaseType(baseEnumExt));
             typeNamespace = typeNamespace.AddMembers(targetClass);
          }
 
          TargetUnit = TargetUnit.AddMembers(typeNamespace);
 
          return this;
+      }
+
+      static ExpressionStatementSyntax CreateMethodInvocation(string genericType, string enumName, string enumValue)
+      {
+         return SyntaxFactory.ExpressionStatement(
+             SyntaxFactory.InvocationExpression(
+                 SyntaxFactory.GenericName("AddTypeDecoder")  // Method name
+                     .WithTypeArgumentList(                  // Add the generic argument (like AddTypeDecoder<Type>)
+                         SyntaxFactory.TypeArgumentList(
+                             SyntaxFactory.SingletonSeparatedList<TypeSyntax>(
+                                 SyntaxFactory.ParseTypeName(genericType)
+                             )
+                         )
+                     )
+             )
+             .WithArgumentList(                             // Argument list (like AddTypeDecoder<Type>(Event.Value))
+                 SyntaxFactory.ArgumentList(
+                     SyntaxFactory.SingletonSeparatedList(
+                         SyntaxFactory.Argument(
+                             SyntaxFactory.MemberAccessExpression(
+                                 SyntaxKind.SimpleMemberAccessExpression,
+                                 SyntaxFactory.IdentifierName(enumName),       // Event
+                                 SyntaxFactory.IdentifierName(enumValue)      // Event.Value
+                             )
+                         )
+                     )
+                 )
+             )
+         );
+      }
+
+      public static string HandleReservedKeyword(string name)
+      {
+         // List of C# reserved keywords
+         var reservedKeywords = new HashSet<string>
+          {
+              "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked", "class",
+              "const", "continue", "decimal", "default", "delegate", "do", "double", "else", "enum", "event",
+              "explicit", "extern", "false", "finally", "fixed", "float", "for", "foreach", "goto", "if",
+              "implicit", "in", "int", "interface", "internal", "is", "lock", "long", "namespace", "new", "null",
+              "object", "operator", "out", "override", "params", "private", "protected", "public", "readonly",
+              "ref", "return", "sbyte", "sealed", "short", "sizeof", "stackalloc", "static", "string", "struct",
+              "switch", "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort",
+              "using", "virtual", "void", "volatile", "while"
+          };
+
+         // If the name is a reserved keyword, prepend with @
+         return reservedKeywords.Contains(name) ? $"@{name}" : name;
       }
    }
 }
