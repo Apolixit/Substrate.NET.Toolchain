@@ -494,8 +494,8 @@ namespace Substrate.DotNet.Service.Node
             BuildStorageVersion(entry, typeMethod, statements, typeMethodName, parameters, keyParam, version);
          }
 
-         ModuleVersion lastVersion = versions.Last();
-         BuildStorageVersion(entry, typeMethod, statements, typeMethodName, parameters, keyParam, lastVersion, false);
+         ModuleVersion lastExistingVersion = versions.Where(v => v.Module.Storage?.Entries?.SingleOrDefault(x => x.Name == entry.Name) is not null).Last();
+         BuildStorageVersion(entry, typeMethod, statements, typeMethodName, parameters, keyParam, lastExistingVersion, false);
 
 
          // Romain 10/09/2024 => Remove this throw statement and keep return the last version.

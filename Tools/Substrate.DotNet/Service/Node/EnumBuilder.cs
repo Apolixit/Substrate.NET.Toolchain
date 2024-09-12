@@ -66,8 +66,7 @@ namespace Substrate.DotNet.Service.Node
          }
 
          ClassDeclarationSyntax targetClass = SyntaxFactory.ClassDeclaration(ClassName)
-             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.SealedKeyword))
-             .AddBaseListTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("BaseEnumRust<Event>")));
+             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword), SyntaxFactory.Token(SyntaxKind.SealedKeyword));
 
          targetClass = targetClass.WithLeadingTrivia(GetCommentsRoslyn(typeDef.Docs, typeDef));
 
@@ -78,6 +77,8 @@ namespace Substrate.DotNet.Service.Node
          }
          else
          {
+            targetClass = targetClass.AddBaseListTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName($"BaseEnumRust<{enumName}>")));
+
             var genericTypeArguments = new List<TypeSyntax> { SyntaxFactory.ParseTypeName(enumName) };
 
             ConstructorDeclarationSyntax constructor = SyntaxFactory.ConstructorDeclaration(ClassName)
