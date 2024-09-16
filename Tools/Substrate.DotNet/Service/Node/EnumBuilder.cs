@@ -14,6 +14,7 @@ using Serilog;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Substrate.NET.Metadata.Base;
 using Newtonsoft.Json.Linq;
+using Substrate.NetApi.Model.Types.Metadata.Base;
 
 namespace Substrate.DotNet.Service.Node
 {
@@ -84,20 +85,7 @@ namespace Substrate.DotNet.Service.Node
             ConstructorDeclarationSyntax constructor = SyntaxFactory.ConstructorDeclaration(ClassName)
             .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword));
 
-            //constructor = constructor.WithBody(
-            //   SyntaxFactory.Block(CreateMethodInvocation("Substrate.NetApiExt.Generated.Model.frame_support.dispatch.DispatchInfo", "h", "ExtrinsicSuccess")));
-            //.WithBody(
-            //    SyntaxFactory.Block(
-            //        CreateMethodInvocation("Substrate.NetApiExt.Generated.Model.frame_support.dispatch.DispatchInfo", "ExtrinsicSuccess"),
-            //        CreateMethodInvocation("BaseTuple<Substrate.NetApiExt.Generated.Model.sp_runtime.EnumDispatchError, Substrate.NetApiExt.Generated.Model.frame_support.dispatch.DispatchInfo>", "ExtrinsicFailed"),
-            //        CreateMethodInvocation("BaseVoid", "CodeUpdated"),
-            //        CreateMethodInvocation("Substrate.NetApiExt.Generated.Model.sp_core.crypto.AccountId32", "NewAccount"),
-            //        CreateMethodInvocation("Substrate.NetApiExt.Generated.Model.sp_core.crypto.AccountId32", "KilledAccount"),
-            //        CreateMethodInvocation("BaseTuple<Substrate.NetApiExt.Generated.Model.sp_core.crypto.AccountId32, Substrate.NetApiExt.Generated.Model.primitive_types.H256>", "Remarked"),
-            //        CreateMethodInvocation("BaseTuple<Substrate.NetApiExt.Generated.Model.primitive_types.H256, Substrate.NetApi.Model.Types.Primitive.Bool>", "UpgradeAuthorized")
-            //    )
-            //);
-
+            var arguments = new List<ExpressionStatementSyntax>();
             foreach (TypeVariant variant in typeDef.Variants)
             {
                string decoderType;
@@ -115,18 +103,14 @@ namespace Substrate.DotNet.Service.Node
                   string tupleType = $"BaseTuple<{string.Join(", ", variant.TypeFields.Select(f => GetFullItemPath(f.TypeId)))}>";
                   decoderType = tupleType;
                }
-
-               constructor = constructor.WithBody(
-                  SyntaxFactory.Block(
-                     CreateMethodInvocation(decoderType, enumName, HandleReservedKeyword(variant.Name))
-                     )
-                  );
+               
+               arguments.Add(CreateMethodInvocation(decoderType, enumName, HandleReservedKeyword(variant.Name)));
             }
+
+            constructor = constructor.WithBody(SyntaxFactory.Block(arguments));
 
             targetClass = targetClass.AddMembers(constructor);
 
-            //GenericNameSyntax baseEnumExt = SyntaxFactory.GenericName(SyntaxFactory.Identifier("BaseEnumRust"), SyntaxFactory.TypeArgumentList(SyntaxFactory.SeparatedList(genericTypeArguments)));
-            //targetClass = targetClass.AddBaseListTypes(SyntaxFactory.SimpleBaseType(baseEnumExt));
             typeNamespace = typeNamespace.AddMembers(targetClass);
          }
 

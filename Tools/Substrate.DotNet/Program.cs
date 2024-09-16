@@ -33,8 +33,8 @@ namespace Substrate.DotNet
       static async Task Main(string[] args)
       {
          args = new string[1];
-         args[0] = "update";
-         //args[0] = "upgrade";
+         //args[0] = "update";
+         args[0] = "upgrade";
          // Initialize logging.
          Log.Logger = new LoggerConfiguration()
           .MinimumLevel.Verbose()

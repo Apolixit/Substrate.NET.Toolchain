@@ -75,8 +75,7 @@ namespace Substrate.DotNet.Service.Node
       {
          try
          {
-            var metadataService = new MetadataService();
-            MetadataVersion version = metadataService.GetMetadataVersion(serializedText);
+            MetadataVersion version = MetadataUtils.GetMetadataVersion(serializedText);
 
             logger.Information("Found Metadata{version} => Conversion to V14", version);
 
