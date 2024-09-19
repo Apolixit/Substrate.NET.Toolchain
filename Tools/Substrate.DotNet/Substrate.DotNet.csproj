@@ -48,6 +48,7 @@
    </ItemGroup>
 
    <ItemGroup>
+     <ProjectReference Include="..\..\..\..\Substrate.NET.Metadata\Substrate.NET.Metadata\Substrate.NET.Metadata.csproj" />
      <ProjectReference Include="..\..\Substrate.ServiceLayer\Substrate.ServiceLayer.csproj" />
    </ItemGroup>
 

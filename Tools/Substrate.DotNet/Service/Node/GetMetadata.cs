@@ -2,6 +2,7 @@
 
 using Serilog;
 using Substrate.NET.Metadata.Base;
+using Substrate.NET.Metadata.Conversion;
 using Substrate.NET.Metadata.Service;
 using Substrate.NET.Metadata.V14;
 using Substrate.NetApi;
@@ -21,17 +22,17 @@ namespace Substrate.DotNet.Service.Node
 {
    internal static class GetMetadata
    {
-      internal static MetaData? GetMetadataFromFile(ILogger logger, string serviceArgument)
+      internal static MetaData? GetMetadataFromFileAndVersion(ILogger logger, string serviceArgument, uint specVersion)
       {
-         logger.Information("Loading metadata from file {file}...", serviceArgument);
+         logger.Information("Loading metadata from version {version} and file {file}...", specVersion, serviceArgument);
 
          try
          {
-            return GetMetadataFromSerializedText(logger, File.ReadAllText(serviceArgument));
+            return GetMetadataFromSerializedText(logger, File.ReadAllText(serviceArgument), specVersion);
          }
          catch (Exception ex)
          {
-            logger.Error(ex, $"Error while loading metadata from file: {serviceArgument}.");
+            logger.Error(ex, $"Error while loading metadata from version {specVersion} and file: {serviceArgument}.");
          }
 
          return null;
@@ -71,7 +72,7 @@ namespace Substrate.DotNet.Service.Node
          return string.Empty;
       }
 
-      internal static MetaData? GetMetadataFromSerializedText(ILogger logger, string serializedText)
+      internal static MetaData? GetMetadataFromSerializedText(ILogger logger, string serializedText, uint specVersion)
       {
          try
          {
@@ -79,36 +80,47 @@ namespace Substrate.DotNet.Service.Node
 
             logger.Information("Found Metadata{version} => Conversion to V14", version);
 
-            MetadataV14? v14 = null;
-            switch(version)
+            IMetadataToV14 metadataToV14 = version switch
             {
-               case MetadataVersion.V9:
-                  var v9 = new NET.Metadata.V9.MetadataV9(serializedText);
-                  v14 = v9.ToMetadataV14();
-                  break;
-               case MetadataVersion.V10:
-                  var v10 = new NET.Metadata.V10.MetadataV10(serializedText);
-                  v14 = v10.ToMetadataV14();
-                  break;
-               case MetadataVersion.V11:
-                  var v11 = new NET.Metadata.V11.MetadataV11(serializedText);
+               MetadataVersion.V9 => new NET.Metadata.V9.MetadataV9(serializedText),
+               MetadataVersion.V10 => new NET.Metadata.V10.MetadataV10(serializedText),
+               MetadataVersion.V11 => new NET.Metadata.V11.MetadataV11(serializedText),
+               MetadataVersion.V12 => new NET.Metadata.V12.MetadataV12(serializedText),
+               MetadataVersion.V13 => new NET.Metadata.V13.MetadataV13(serializedText),
+               MetadataVersion.V14 => new NET.Metadata.V14.MetadataV14(serializedText),
+               _ => throw new InvalidOperationException($"Metadata version {version} is not supported!")
+            };
 
-                  v14 = v11.ToMetadataV14();
-                  break;
-               case MetadataVersion.V12:
-                  var v12 = new NET.Metadata.V12.MetadataV12(serializedText);
-                  v14 = v12.ToMetadataV14();
-                  break;
-               case MetadataVersion.V13:
-                  var v13 = new NET.Metadata.V13.MetadataV13(serializedText);
-                  v14 = v13.ToMetadataV14();
-                  break;
-               case MetadataVersion.V14:
-                  v14 = new NET.Metadata.V14.MetadataV14(serializedText);
-                  break;
-               default:
-                  throw new InvalidOperationException($"Metadata version {version} is not supported!");
-            }
+            var v14 = metadataToV14.ToMetadataV14(specVersion);
+            //switch(version)
+            //{
+            //   case MetadataVersion.V9:
+            //      var v9 = new NET.Metadata.V9.MetadataV9(serializedText);
+            //      v14 = v9.ToMetadataV14();
+            //      break;
+            //   case MetadataVersion.V10:
+            //      var v10 = new NET.Metadata.V10.MetadataV10(serializedText);
+            //      v14 = v10.ToMetadataV14();
+            //      break;
+            //   case MetadataVersion.V11:
+            //      var v11 = new NET.Metadata.V11.MetadataV11(serializedText);
+
+            //      v14 = v11.ToMetadataV14();
+            //      break;
+            //   case MetadataVersion.V12:
+            //      var v12 = new NET.Metadata.V12.MetadataV12(serializedText);
+            //      v14 = v12.ToMetadataV14();
+            //      break;
+            //   case MetadataVersion.V13:
+            //      var v13 = new NET.Metadata.V13.MetadataV13(serializedText);
+            //      v14 = v13.ToMetadataV14();
+            //      break;
+            //   case MetadataVersion.V14:
+            //      v14 = new NET.Metadata.V14.MetadataV14(serializedText);
+            //      break;
+            //   default:
+            //      throw new InvalidOperationException($"Metadata version {version} is not supported!");
+            //}
 
             return v14.ToNetApiMetadata();
             //var runtimeMetadata = new RuntimeMetadata();
@@ -149,7 +161,7 @@ namespace Substrate.DotNet.Service.Node
             {
                logger.Information("Version {version} successfully fetched...", version.SpecVersion);
                return version.SpecVersion;
-            }   
+            }
          }
          catch (Exception ex)
          {

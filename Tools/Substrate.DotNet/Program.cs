@@ -227,7 +227,7 @@ namespace Substrate.DotNet
          string metadataFilePath = (blockVersion is null) ? ResolveMetadataFilePath() : ResolveMetadataFilePath(blockVersion.SpecVersion);
          Log.Information("Using Metadata = {metadataFilePath}", metadataFilePath);
 
-         MetaData metadata = GetMetadata.GetMetadataFromFile(Log.Logger, metadataFilePath);
+         MetaData metadata = GetMetadata.GetMetadataFromFileAndVersion(Log.Logger, metadataFilePath, blockVersion.SpecVersion);
          if (metadata == null)
          {
             return null;
