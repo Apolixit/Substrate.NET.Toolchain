@@ -90,43 +90,55 @@ namespace Substrate.DotNet.Service.Node
 
          foreach (NodeTypeRefined nodeTypeRefined in linkedToVersion)
          {
-
-            string item = GetFullItemPath(nodeTypeRefined.NodeResolved.NodeType.Id).ToString();
-            ReturnStatementSyntax returnType = SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName($"typeof({item})"));
-
-            statements.Add(SyntaxFactory.IfStatement(
-                   SyntaxFactory.BinaryExpression(
-                       SyntaxKind.EqualsExpression,
-            SyntaxFactory.IdentifierName("version"),
-                       SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(nodeTypeRefined.ToNumberVersion()))
-                    ),
-                   SyntaxFactory.Block(
-                      returnType
-                  )
-               ));
+            buildTypeByVersion(statements, nodeTypeRefined);
          }
 
-         ThrowStatementSyntax throwStatement = SyntaxFactory.ThrowStatement(
-                 SyntaxFactory.ObjectCreationExpression(
-                     SyntaxFactory.QualifiedName(
-                         SyntaxFactory.ParseName("System"),
-                         SyntaxFactory.IdentifierName("InvalidOperationException")
-                     ), SyntaxFactory.ArgumentList(
-                 SyntaxFactory.SingletonSeparatedList(
-                     SyntaxFactory.Argument(
-                         SyntaxFactory.LiteralExpression(
-                             SyntaxKind.StringLiteralExpression,
-                             SyntaxFactory.Literal("Error while fetching type by version")
-                         )
-                     )
-                 )
-             ), null));
+         buildTypeByVersion(statements, linkedToVersion.Last(), checkVersion: false);
 
-         statements.Add(throwStatement);
+         //ThrowStatementSyntax throwStatement = SyntaxFactory.ThrowStatement(
+         //        SyntaxFactory.ObjectCreationExpression(
+         //            SyntaxFactory.QualifiedName(
+         //                SyntaxFactory.ParseName("System"),
+         //                SyntaxFactory.IdentifierName("InvalidOperationException")
+         //            ), SyntaxFactory.ArgumentList(
+         //        SyntaxFactory.SingletonSeparatedList(
+         //            SyntaxFactory.Argument(
+         //                SyntaxFactory.LiteralExpression(
+         //                    SyntaxKind.StringLiteralExpression,
+         //                    SyntaxFactory.Literal("Error while fetching type by version")
+         //                )
+         //            )
+         //        )
+         //    ), null));
+
+         //statements.Add(throwStatement);
 
          createMethod = createMethod.WithBody(SyntaxFactory.Block(statements));
 
          return createMethod;
+      }
+
+      private void buildTypeByVersion(List<StatementSyntax> statements, NodeTypeRefined nodeTypeRefined, bool checkVersion = true)
+      {
+         string item = GetFullItemPath(nodeTypeRefined.NodeResolved.NodeType.Id).ToString();
+         ReturnStatementSyntax returnType = SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName($"typeof({item})"));
+
+         if(checkVersion)
+         {
+            statements.Add(SyntaxFactory.IfStatement(
+                SyntaxFactory.BinaryExpression(
+                    SyntaxKind.EqualsExpression,
+         SyntaxFactory.IdentifierName("version"),
+                    SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(nodeTypeRefined.ToNumberVersion()))
+                 ),
+                SyntaxFactory.Block(
+                   returnType
+               )
+            ));
+         } else
+         {
+            statements.Add(returnType);
+         }
       }
 
       private MethodDeclarationSyntax GetCreateByVersionRoslyn(NodeTypeComposite typeDef)
@@ -158,43 +170,58 @@ namespace Substrate.DotNet.Service.Node
 
          foreach (NodeTypeRefined nodeTypeRefined in linkedToVersion)
          {
-
-            StatementSyntax newInstance = SyntaxFactory.ParseStatement($"instance = new {GetFullItemPath(nodeTypeRefined.NodeResolved.NodeType.Id)}();");
-
-            ExpressionStatementSyntax callMethod = SyntaxFactory.ExpressionStatement(
-               SyntaxFactory.InvocationExpression(
-                  SyntaxFactory.MemberAccessExpression(
-                     SyntaxKind.SimpleMemberAccessExpression,
-                     SyntaxFactory.IdentifierName("instance"),
-                     SyntaxFactory.IdentifierName("Create")
-                  ),
-                  SyntaxFactory.ArgumentList(
-                     SyntaxFactory.SingletonSeparatedList(
-                        SyntaxFactory.Argument(
-                              SyntaxFactory.IdentifierName("data")
-                        )
-                     )
-                  )
-               )
-            );
-
-            statements.Add(SyntaxFactory.IfStatement(
-                   SyntaxFactory.BinaryExpression(
-                       SyntaxKind.EqualsExpression,
-            SyntaxFactory.IdentifierName("version"),
-                       SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(nodeTypeRefined.ToNumberVersion()))
-                    ),
-                   SyntaxFactory.Block(
-                      newInstance,
-                      callMethod
-                  )
-               ));
+            buildCreateByVersion(statements, nodeTypeRefined);
          }
+
+         buildCreateByVersion(statements, linkedToVersion.Last(), checkVersion: false);
 
          statements.Add(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("instance")));
          createMethod = createMethod.WithBody(SyntaxFactory.Block(statements));
 
          return createMethod;
+      }
+
+      private void buildCreateByVersion(List<StatementSyntax> statements, NodeTypeRefined nodeTypeRefined, bool checkVersion = true)
+      {
+         StatementSyntax newInstance = SyntaxFactory.ParseStatement($"instance = new {GetFullItemPath(nodeTypeRefined.NodeResolved.NodeType.Id)}();");
+
+         ExpressionStatementSyntax callMethod = SyntaxFactory.ExpressionStatement(
+            SyntaxFactory.InvocationExpression(
+               SyntaxFactory.MemberAccessExpression(
+                  SyntaxKind.SimpleMemberAccessExpression,
+                  SyntaxFactory.IdentifierName("instance"),
+                  SyntaxFactory.IdentifierName("Create")
+               ),
+               SyntaxFactory.ArgumentList(
+                  SyntaxFactory.SingletonSeparatedList(
+                     SyntaxFactory.Argument(
+                           SyntaxFactory.IdentifierName("data")
+                     )
+                  )
+               )
+            )
+         );
+
+         if (checkVersion)
+         {
+            statements.Add(SyntaxFactory.IfStatement(
+                SyntaxFactory.BinaryExpression(
+                    SyntaxKind.EqualsExpression,
+         SyntaxFactory.IdentifierName("version"),
+                    SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(nodeTypeRefined.ToNumberVersion()))
+                 ),
+                SyntaxFactory.Block(
+                   newInstance,
+                   callMethod
+               )
+            ));
+         }
+         else
+         {
+            statements.Add(newInstance);
+            statements.Add(callMethod);
+         }
+
       }
 
       private MethodDeclarationSyntax GetDecodeRoslyn(NodeTypeField[] typeFields)
@@ -327,11 +354,12 @@ namespace Substrate.DotNet.Service.Node
           * Decode method is not implemented in mother class (will be override in children classes)
           * While mother class declare a new static "Create" method which will call children create method depends of SpecVersion
           **/
-         if(!IsMotherClass())
+         if (!IsMotherClass())
          {
             MethodDeclarationSyntax decodeMethod = GetDecodeRoslyn(typeDef.TypeFields);
             targetClass = targetClass.AddMembers(decodeMethod);
-         } else
+         }
+         else
          {
             MethodDeclarationSyntax typeMethod = GetTypeByVersionRoslyn(typeDef);
             targetClass = targetClass.AddMembers(typeMethod);
@@ -374,7 +402,8 @@ namespace Substrate.DotNet.Service.Node
          return GetPropertyRoslyn(fieldName, SyntaxFactory.ParseTypeName(fullItem.ToString()));
       }
 
-      private static string GetFieldName(NodeTypeField typeField, string alterName, int length, int index)
+      public static string GetFieldName(NodeTypeField typeField, int length, int index) => GetFieldName(typeField, "value", length, index);
+      public static string GetFieldName(NodeTypeField typeField, string alterName, int length, int index)
       {
          if (typeField.Name == null)
          {

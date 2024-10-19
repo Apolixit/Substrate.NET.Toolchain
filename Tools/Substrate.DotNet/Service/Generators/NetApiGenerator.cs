@@ -283,7 +283,8 @@ namespace Substrate.DotNet.Service.Generators
                var otherChildrenTypeComposite = (NodeTypeComposite)otherGroupedNodes.NodeResolved.NodeType;
                if (otherChildrenTypeComposite.TypeFields is not null)
                {
-                  otherChildrenTypeComposite.TypeFields.ToList().ForEach(p =>
+                  var otherChildrenTypeCompositeList = otherChildrenTypeComposite.TypeFields.ToList();
+                  otherChildrenTypeCompositeList.ForEach(p =>
                   {
                      NodeTypeField existingField = TryFindExistingField(p, motherNodeTypeComposite);
 
@@ -292,10 +293,15 @@ namespace Substrate.DotNet.Service.Generators
                         // If version changed, change mother type to BaseType
                         AddPropToMotherTypeField(p, motherNodeTypeComposite);
                      }
-                     else if (existingField.Name is not null)
+                     else
                      {
                         ManageNewPropertyVersion(refinedNodes, motherNodeTypeComposite, p, existingField);
                      }
+
+                     //else if (existingField.Name is not null)
+                     //{
+                     //   ManageNewPropertyVersion(refinedNodes, motherNodeTypeComposite, p, existingField);
+                     //}
                   });
 
                   mappingMother.Add(otherChildrenTypeComposite.Id, motherNodeId);
@@ -319,10 +325,10 @@ namespace Substrate.DotNet.Service.Generators
       private static NodeTypeField TryFindExistingField(NodeTypeField p, NodeTypeComposite motherNodeTypeComposite)
       {
          NodeTypeField existingField = null;
-         string propNameToSearch = p.Name;
+         string propNameToSearch = StructBuilder.GetFieldName(p, "value", motherNodeTypeComposite.TypeFields.Length, 0);
          do
          {
-            NodeTypeField foundedField = motherNodeTypeComposite.TypeFields.FirstOrDefault(x => x.Name == propNameToSearch);
+            NodeTypeField foundedField = motherNodeTypeComposite.TypeFields.FirstOrDefault(x => StructBuilder.GetFieldName(x, motherNodeTypeComposite.TypeFields.Length, 0) == propNameToSearch);
             if (foundedField is not null)
             {
                existingField = foundedField;
@@ -346,12 +352,24 @@ namespace Substrate.DotNet.Service.Generators
          NodeTypeField currentField,
          NodeTypeField existingField)
       {
+         // Get the existing and current NodeType
          NodeType existing = refinedNodes.First(x => x.Index == existingField.TypeId).NodeResolved.NodeType;
          NodeType current = refinedNodes.First(x => x.Index == currentField.TypeId).NodeResolved.NodeType;
 
+         // If anything changed, we need to create a new property
          if(IsTypeChanged(existing, current) || IsPathChanged(existing, current))
          {
-            currentField.Name = RenamePropertyWithNewVersion(existingField.Name);
+            string name;
+            if(existing is NodeTypeComposite existingTypeComposite)
+            {
+               name = StructBuilder.GetFieldName(existingField, existingTypeComposite.TypeFields.Length, 0);
+            } else
+            {
+               name = StructBuilder.GetFieldName(existingField, 0, 0);
+            }
+
+            //currentField.Name = RenamePropertyWithNewVersion(existingField.Name ?? "value");
+            currentField.Name = RenamePropertyWithNewVersion(name);
 
             if (!DoesExistInMotherProp(motherNodeTypeComposite, currentField.Name))
             {
@@ -361,19 +379,6 @@ namespace Substrate.DotNet.Service.Generators
          {
             currentField.Name = existingField.Name;
          }
-         //if (IsTypeChanged(existing, current) || (existing.Path is not null && current.Path is not null))
-         //{
-         //   string newPropName = RenamePropertyWithNewVersion(currentField.Name);
-         //   if (IsPathChanged(existing, current) || IsTypeChanged(existing, current))
-         //   {
-         //      currentField.Name = newPropName;
-
-         //      if (!DoesExistInMotherProp(motherNodeTypeComposite, newPropName))
-         //      {
-         //         AddPropToMotherTypeField(currentField, motherNodeTypeComposite);
-         //      }
-         //   }
-         //}
 
          static bool IsPathChanged(NodeType n1, NodeType n2)
          {
@@ -389,9 +394,23 @@ namespace Substrate.DotNet.Service.Generators
 
          }
 
+         /// Check if the type has changed or if the data has changed (primitive often changed from U8 to U32)
          static bool IsTypeChanged(NodeType n1, NodeType n2)
          {
-            return n1.TypeDef != n2.TypeDef;
+            bool hasChanged = n1.TypeDef != n2.TypeDef;
+
+            if (hasChanged)
+            {
+               return true;
+            }
+
+            
+            if (n1 is NodeTypePrimitive n1Primitive && n2 is NodeTypePrimitive n2Primitive)
+            {
+               return n1Primitive.Primitive != n2Primitive.Primitive;
+            }
+
+            return false;
          }
       }
 
@@ -423,6 +442,13 @@ namespace Substrate.DotNet.Service.Generators
             TypeId = p.TypeId,
             TypeName = p.TypeName
          });
+
+         // Edge case (not sure how to handle it properly) : if the mother class only have one property without a name, rename it to "value" (otherwise when call StructBuilder.GetFieldName, the first prop will be call with TypeName
+         if(motherNodeTypeComposite.TypeFields.Length == 1 && motherNodeTypeComposite.TypeFields[0].Name is null)
+         {
+            motherNodeTypeComposite.TypeFields[0].Name = "value";
+         }
+
          motherNodeTypeComposite.TypeFields = extensionProp.ToArray();
       }
 

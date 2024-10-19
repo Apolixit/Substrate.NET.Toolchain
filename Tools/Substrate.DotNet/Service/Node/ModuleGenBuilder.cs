@@ -249,6 +249,12 @@ namespace Substrate.DotNet.Service.Node
                // add storage method to the class
                targetClass = targetClass.AddMembers(storageMethod);
 
+               if(ModuleType == TypeModule.Aggregation)
+               {
+                  MethodDeclarationSyntax typeMethod = SyntaxFactory.MethodDeclaration(SyntaxFactory.ParseTypeName($"bool"), entry.Name + "AvailableVersions");
+                  targetClass = targetClass.AddMembers(CreateAvailableVersionsMethod(typeMethod));
+               }
+
                // Add a InputType method if we are a module aggregation and have key input
                // This is use to return the conrete key type regards of the version
                if (ModuleType == TypeModule.Aggregation && entry.StorageType == Storage.Type.Map)
@@ -367,12 +373,39 @@ namespace Substrate.DotNet.Service.Node
          return typeMethod.WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, TypeMethod.InputType));
       }
 
-      private MethodDeclarationSyntax CreateTypeAggregationMethod(MethodDeclarationSyntax storageMethod, Entry entry)
-      {
-         return storageMethod.WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, TypeMethod.Storage));
-         //return storageMethod.WithBody(GetStorageStringRoslynAggregation(entry, AssociatedModulesVersion, returnValueStr, TypeMethod.Storage));
-      }
       #endregion
+      private MethodDeclarationSyntax CreateAvailableVersionsMethod(MethodDeclarationSyntax method)
+      {
+         method = method
+                  .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword)));
+
+         method = method
+            .AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.Identifier("version")).WithType(SyntaxFactory.ParseTypeName("uint")));
+
+         var statements = new List<StatementSyntax>();
+
+         string resultVersion = $"new List<uint>() {{ {string.Join(", ", AssociatedModulesVersion.Select(x => x.Version))} }}";
+         VariableDeclarationSyntax versionsAvailableDeclaration = SyntaxFactory
+               .VariableDeclaration(SyntaxFactory.IdentifierName("var"))
+               .AddVariables(SyntaxFactory.VariableDeclarator(SyntaxFactory.Identifier("availableVersions"), null, SyntaxFactory.EqualsValueClause(SyntaxFactory.IdentifierName(resultVersion))));
+         statements.Add(SyntaxFactory.LocalDeclarationStatement(versionsAvailableDeclaration));
+
+         ReturnStatementSyntax containsMethodInvocation = SyntaxFactory.ReturnStatement(SyntaxFactory.InvocationExpression(
+           SyntaxFactory.MemberAccessExpression(
+               SyntaxKind.SimpleMemberAccessExpression,
+               SyntaxFactory.IdentifierName("availableVersions"),
+               SyntaxFactory.IdentifierName("Contains"))).WithArgumentList(
+           SyntaxFactory.ArgumentList(
+               SyntaxFactory.SingletonSeparatedList(
+                  SyntaxFactory.Argument(SyntaxFactory.IdentifierName("version"))))));
+
+         statements.Add(containsMethodInvocation);
+         return method.WithBody(SyntaxFactory.Block(statements));
+      }
+      #region Available versions method
+
+      #endregion
+
       #region Storage method
       private MethodDeclarationSyntax CreateStorageMethod(MethodDeclarationSyntax storageMethod, Entry entry, ExpressionStatementSyntax methodInvoke, string returnValue)
       {
@@ -444,7 +477,8 @@ namespace Substrate.DotNet.Service.Node
          Default,
          Parameter,
          Storage,
-         InputType
+         InputType,
+         AvailableVersions
       }
 
       private BlockSyntax GetStorageStringRoslynAggregation(
