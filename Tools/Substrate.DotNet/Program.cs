@@ -23,6 +23,7 @@ namespace Substrate.DotNet
 {
    partial class Program
    {
+      private static string BlockchainName { get; set; }
       /// <summary>
       /// Command line utility to easily maintain and scaffold Substrate .NET Toolchain related projects.
       /// 
@@ -32,9 +33,13 @@ namespace Substrate.DotNet
       /// </summary>
       static async Task Main(string[] args)
       {
-         args = new string[1];
-         //args[0] = "update";
-         args[0] = "upgrade";
+         BlockchainName = args[0];
+
+         if(string.IsNullOrEmpty(BlockchainName))
+         {
+            throw new InvalidOperationException("Please provide a blockchain name as the first argument.");
+         }
+         
          // Initialize logging.
          Log.Logger = new LoggerConfiguration()
           .MinimumLevel.Verbose()
@@ -43,35 +48,10 @@ namespace Substrate.DotNet
 
          try
          {
-            for (int i = 0; i < args.Length; i++)
+            if (!await UpgradeSubstrateEnvironmentAsync(CancellationToken.None))
             {
-               switch (args[i])
-               {
-                  // Handles dotnet substrate update
-                  case "update":
-                     {
-                        if (!await UpdateSubstrateEnvironmentAsync(CancellationToken.None))
-                        {
-                           Log.Error("Updating project did not complete successfully.");
-                           Environment.Exit(-1);
-                        }
-                     }
-                     break;
-
-                  // Handles dotnet substrate upgrade
-                  case "upgrade":
-                     {
-                        if (!await UpgradeSubstrateEnvironmentAsync(CancellationToken.None))
-                        {
-                           Log.Error("Upgrading project did not complete successfully.");
-                           Environment.Exit(-1);
-                        }
-                     }
-                     break;
-
-                  default:
-                     break;
-               }
+               Log.Error("Upgrading project did not complete successfully.");
+               Environment.Exit(-1);
             }
          }
          catch (InvalidOperationException ex)
@@ -426,12 +406,12 @@ namespace Substrate.DotNet
       /// <summary>
       /// Returns the directory path to .substrate directory
       /// </summary>
-      private static string ResolveConfigurationDirectory() => Path.Join(Environment.CurrentDirectory, ".substrate");
+      private static string ResolveConfigurationDirectory() => Path.Join(Environment.CurrentDirectory, $".{BlockchainName.ToLower()}-substrate");
 
       /// <summary>
       /// Returns the file path to .substrate/substrate-config.json
       /// </summary>
-      private static string ResolveConfigurationFilePath() => Path.Join(ResolveConfigurationDirectory(), "substrate-config.json");
+      private static string ResolveConfigurationFilePath() => Path.Join(ResolveConfigurationDirectory(), $"substrate-config.json");
 
       /// <summary>
       /// Returns the file path to .substrate/metadata.txt

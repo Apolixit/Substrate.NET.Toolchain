@@ -95,24 +95,6 @@ namespace Substrate.DotNet.Service.Node
 
          buildTypeByVersion(statements, linkedToVersion.Last(), checkVersion: false);
 
-         //ThrowStatementSyntax throwStatement = SyntaxFactory.ThrowStatement(
-         //        SyntaxFactory.ObjectCreationExpression(
-         //            SyntaxFactory.QualifiedName(
-         //                SyntaxFactory.ParseName("System"),
-         //                SyntaxFactory.IdentifierName("InvalidOperationException")
-         //            ), SyntaxFactory.ArgumentList(
-         //        SyntaxFactory.SingletonSeparatedList(
-         //            SyntaxFactory.Argument(
-         //                SyntaxFactory.LiteralExpression(
-         //                    SyntaxKind.StringLiteralExpression,
-         //                    SyntaxFactory.Literal("Error while fetching type by version")
-         //                )
-         //            )
-         //        )
-         //    ), null));
-
-         //statements.Add(throwStatement);
-
          createMethod = createMethod.WithBody(SyntaxFactory.Block(statements));
 
          return createMethod;
@@ -175,7 +157,6 @@ namespace Substrate.DotNet.Service.Node
 
          buildCreateByVersion(statements, linkedToVersion.Last(), checkVersion: false);
 
-         statements.Add(SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName("instance")));
          createMethod = createMethod.WithBody(SyntaxFactory.Block(statements));
 
          return createMethod;
@@ -202,6 +183,8 @@ namespace Substrate.DotNet.Service.Node
             )
          );
 
+         ReturnStatementSyntax returnType = SyntaxFactory.ReturnStatement(SyntaxFactory.IdentifierName($"instance"));
+
          if (checkVersion)
          {
             statements.Add(SyntaxFactory.IfStatement(
@@ -212,7 +195,8 @@ namespace Substrate.DotNet.Service.Node
                  ),
                 SyntaxFactory.Block(
                    newInstance,
-                   callMethod
+                   callMethod,
+                   returnType
                )
             ));
          }
@@ -220,8 +204,8 @@ namespace Substrate.DotNet.Service.Node
          {
             statements.Add(newInstance);
             statements.Add(callMethod);
+            statements.Add(returnType);
          }
-
       }
 
       private MethodDeclarationSyntax GetDecodeRoslyn(NodeTypeField[] typeFields)
