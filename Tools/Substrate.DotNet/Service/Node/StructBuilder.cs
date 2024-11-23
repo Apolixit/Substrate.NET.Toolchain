@@ -412,5 +412,17 @@ namespace Substrate.DotNet.Service.Node
             return typeField.Name;
          }
       }
+
+      public static string GetFieldNameMotherType(NodeTypeField typeField, string alterName, int length, int index)
+      {
+         if (typeField.Name == null)
+         {
+            return alterName;
+         }
+         else
+         {
+            return typeField.Name;
+         }
+      }
    }
 }

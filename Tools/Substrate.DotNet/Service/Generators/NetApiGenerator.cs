@@ -325,13 +325,25 @@ namespace Substrate.DotNet.Service.Generators
       private static NodeTypeField TryFindExistingField(NodeTypeField p, NodeTypeComposite motherNodeTypeComposite)
       {
          NodeTypeField existingField = null;
-         string propNameToSearch = StructBuilder.GetFieldName(p, "value", motherNodeTypeComposite.TypeFields.Length, 0);
+
+         string propNameToSearch = null;
+
+         if(motherNodeTypeComposite.TypeFields.Length > 1 && motherNodeTypeComposite.TypeFields.All(x => x.Name is null))
+         {
+            propNameToSearch = StructBuilder.GetFieldName(p, "value", motherNodeTypeComposite.TypeFields.Length, 0);
+         } else
+         {
+            propNameToSearch = StructBuilder.GetFieldNameMotherType(p, "value", motherNodeTypeComposite.TypeFields.Length, 0);
+         }
+         //propNameToSearch = StructBuilder.GetFieldName(p, "value", motherNodeTypeComposite.TypeFields.Length, 0);
          do
          {
             NodeTypeField foundedField = motherNodeTypeComposite.TypeFields.FirstOrDefault(x => StructBuilder.GetFieldName(x, motherNodeTypeComposite.TypeFields.Length, 0) == propNameToSearch);
             if (foundedField is not null)
             {
                existingField = foundedField;
+
+               // If we have found the field, we try to find the next one (for example value1, value2, value3, etc.)
                if(propNameToSearch is not null)
                {
                   propNameToSearch = RenamePropertyWithNewVersion(propNameToSearch);
